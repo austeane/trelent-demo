@@ -1,5 +1,8 @@
 import { Client, Connection } from '@temporalio/client';
 
+// Re-export shared constants
+export { TASK_QUEUE } from './types';
+
 let client: Client | null = null;
 let connectionPromise: Promise<Connection> | null = null;
 
@@ -22,5 +25,3 @@ export async function getTemporalClient(): Promise<Client> {
 
   return client;
 }
-
-export const TASK_QUEUE = 'guide-generation';

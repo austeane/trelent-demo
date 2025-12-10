@@ -1,49 +1,16 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { GuideCard } from './GuideCard';
-
-interface Guide {
-  id: string;
-  name: string;
-  description: string;
-  status: string;
-  searchResults: unknown[] | null;
-  htmlContent: string | null;
-  failureReason: string | null;
-  failureDetails: Record<string, unknown> | null;
-  attempts: number;
-}
-
-interface GuidesResponse {
-  guides: Guide[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
-}
-
-interface RunStatus {
-  run: {
-    status: string;
-  };
-  guideCounts: {
-    needs_attention?: number;
-    completed?: number;
-    pending?: number;
-    searching?: number;
-    generating?: number;
-  };
-}
+import { GuidesResponse, RunStatus, FINISHED_RUN_STATUSES } from '@/lib/types';
 
 const STATUS_FILTERS = [
   { value: '', label: 'All' },
   { value: 'completed', label: 'Completed' },
   { value: 'needs_attention', label: 'Needs attention' },
   { value: 'pending', label: 'Pending' },
-  { value: 'generating', label: 'In progress' },
+  { value: 'searching', label: 'Searching' },
+  { value: 'generating', label: 'Generating' },
 ];
 
 export function GuideList({ runId }: { runId: string }) {
@@ -54,9 +21,8 @@ export function GuideList({ runId }: { runId: string }) {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [retryTrigger, setRetryTrigger] = useState(0);
-  const [runFinished, setRunFinished] = useState(false);
   const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [runStatus, setRunStatus] = useState<string>('pending');
 
   const handleRetry = async (guideId: string) => {
     try {
@@ -86,6 +52,7 @@ export function GuideList({ runId }: { runId: string }) {
 
   useEffect(() => {
     let active = true;
+    let intervalId: NodeJS.Timeout | null = null;
 
     const fetchGuides = async () => {
       setLoading(true);
@@ -106,19 +73,8 @@ export function GuideList({ runId }: { runId: string }) {
         if (active) {
           setData(guidesJson);
           setNeedsAttentionCount(runJson.guideCounts?.needs_attention || 0);
-
-          // Check if run is finished
-          const isFinished = ['completed', 'completed_with_errors', 'failed'].includes(
-            runJson.run.status
-          );
-          if (isFinished) {
-            setRunFinished(true);
-            // Stop polling
-            if (intervalRef.current) {
-              clearInterval(intervalRef.current);
-              intervalRef.current = null;
-            }
-          }
+          // Derive finished status each fetch - allows recovery when run becomes active again
+          setRunStatus(runJson.run.status);
         }
       } catch (err) {
         console.error('Failed to fetch guides:', err);
@@ -129,23 +85,26 @@ export function GuideList({ runId }: { runId: string }) {
 
     fetchGuides();
 
-    // Only poll if run is not finished
-    if (!runFinished) {
-      intervalRef.current = setInterval(fetchGuides, 3000);
-    }
+    // Derive finished status - poll slower when finished, faster when active
+    const isFinished = FINISHED_RUN_STATUSES.includes(runStatus);
+    const pollInterval = isFinished ? 10000 : 3000; // 10s when finished, 3s when active
+
+    intervalId = setInterval(fetchGuides, pollInterval);
 
     return () => {
       active = false;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+      if (intervalId) {
+        clearInterval(intervalId);
       }
     };
-  }, [runId, filter, search, page, retryTrigger, runFinished]);
+  }, [runId, filter, search, page, retryTrigger, runStatus]);
+
+  const isRunFinished = FINISHED_RUN_STATUSES.includes(runStatus);
 
   return (
     <div className="space-y-4">
       {/* Review prompt when run finished with needs_attention guides */}
-      {runFinished && needsAttentionCount > 0 && filter !== 'needs_attention' && (
+      {isRunFinished && needsAttentionCount > 0 && filter !== 'needs_attention' && (
         <button
           onClick={() => {
             setFilter('needs_attention');
@@ -239,7 +198,7 @@ export function GuideList({ runId }: { runId: string }) {
       ) : (
         <div className="space-y-4">
           {data?.guides.map((guide) => (
-            <GuideCard key={guide.id} guide={guide as any} onRetry={handleRetry} />
+            <GuideCard key={guide.id} guide={guide} onRetry={handleRetry} />
           ))}
         </div>
       )}

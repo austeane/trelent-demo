@@ -63,16 +63,18 @@ model Run {
 }
 
 model File {
-  id              String     @id @default(uuid())
-  runId           String
-  run             Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
-  filename        String
-  fileHash        String
-  status          FileStatus @default(pending)
-  markdownContent String?    @db.Text
-  errorMessage    String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id                  String     @id @default(uuid())
+  runId               String
+  run                 Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  filename            String
+  fileHash            String
+  status              FileStatus @default(pending)
+  markdownContent     String?    @db.Text
+  errorMessage        String?
+  processingToken     String?    // Lease token: workflowId:activityId:attempt
+  processingStartedAt DateTime?  // When processing began (for lease expiry)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   @@unique([runId, fileHash])
   @@index([runId, status])
@@ -80,20 +82,22 @@ model File {
 }
 
 model Guide {
-  id             String      @id @default(uuid())
-  runId          String
-  run            Run         @relation(fields: [runId], references: [id], onDelete: Cascade)
-  name           String
-  description    String      @db.Text
-  status         GuideStatus @default(pending)
-  searchResults  Json?
-  htmlContent    String?     @db.Text
-  failureReason  String?
-  failureDetails Json?
-  forceFailure   Boolean     @default(false)
-  attempts       Int         @default(0)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id                  String      @id @default(uuid())
+  runId               String
+  run                 Run         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name                String
+  description         String      @db.Text
+  status              GuideStatus @default(pending)
+  searchResults       Json?
+  htmlContent         String?     @db.Text
+  failureReason       String?
+  failureDetails      Json?
+  forceFailure        Boolean     @default(false)
+  attempts            Int         @default(0)
+  processingToken     String?     // Lease token: workflowId:activityId:attempt
+  processingStartedAt DateTime?   // When processing began (for lease expiry)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
   @@index([runId, status])
   @@map("guides")

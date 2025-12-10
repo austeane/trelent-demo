@@ -2,11 +2,28 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { GuideStatus } from '@prisma/client';
 
+// Valid GuideStatus values for validation
+const VALID_GUIDE_STATUSES = Object.values(GuideStatus);
+
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest, { params }: { params: { runId: string } }) {
   try {
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status') as GuideStatus | null;
+    const rawStatus = searchParams.get('status');
     const search = searchParams.get('search');
+
+    // Validate status parameter against enum
+    let status: GuideStatus | null = null;
+    if (rawStatus) {
+      if (!VALID_GUIDE_STATUSES.includes(rawStatus as GuideStatus)) {
+        return NextResponse.json(
+          { error: `Invalid status. Must be one of: ${VALID_GUIDE_STATUSES.join(', ')}` },
+          { status: 400 }
+        );
+      }
+      status = rawStatus as GuideStatus;
+    }
 
     // Validate and clamp pagination parameters
     const rawPage = parseInt(searchParams.get('page') || '1');

@@ -1,7 +1,9 @@
 import { NativeConnection, Worker } from '@temporalio/worker';
 import * as activities from './activities';
 
-const TASK_QUEUE = 'guide-generation';
+// Use environment variable for task queue name to stay in sync with web
+// Default matches the constant in web/lib/types.ts
+const TASK_QUEUE = process.env.TEMPORAL_TASK_QUEUE || 'guide-generation';
 
 async function run() {
   const address = process.env.TEMPORAL_ADDRESS || 'localhost:7233';

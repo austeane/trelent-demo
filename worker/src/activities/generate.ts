@@ -15,6 +15,15 @@ const GENERATION_CONFIG = {
   failureRate: 0.04,
 };
 
+// Lease expiry threshold - allow takeover after this duration
+const LEASE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+
+function generateProcessingToken(): string {
+  const ctx = Context.current();
+  const info = ctx.info;
+  return `${info.workflowExecution.workflowId}:${info.activityId}:${info.attempt}`;
+}
+
 // Escape HTML to prevent XSS
 function escapeHtml(str: string): string {
   return str
@@ -222,20 +231,44 @@ async function processGuideInternal(
   attempt: number,
   isManualRetry: boolean
 ): Promise<{ success: boolean }> {
-  // Conditional update: only transition if in expected state
-  const validFromStates: GuideStatus[] = isManualRetry
-    ? ['pending', 'needs_attention', 'searching', 'generating']
-    : ['pending', 'searching', 'generating'];
+  const token = generateProcessingToken();
+  const now = new Date();
+  const leaseExpiry = new Date(now.getTime() - LEASE_EXPIRY_MS);
+
+  // Build the lease acquisition conditions
+  // For manual retry: also allow from needs_attention
+  // For normal processing: only from pending or expired in-progress states
+  const baseConditions = isManualRetry
+    ? [
+        { status: 'pending' as GuideStatus },
+        { status: 'needs_attention' as GuideStatus },
+        {
+          status: { in: ['searching', 'generating'] as GuideStatus[] },
+          processingStartedAt: { lt: leaseExpiry },
+        },
+      ]
+    : [
+        { status: 'pending' as GuideStatus },
+        {
+          status: { in: ['searching', 'generating'] as GuideStatus[] },
+          processingStartedAt: { lt: leaseExpiry },
+        },
+      ];
 
   const updateResult = await db.guide.updateMany({
     where: {
       id: guideId,
-      status: { in: validFromStates },
+      OR: baseConditions,
     },
-    data: { status: 'searching', attempts: attempt },
+    data: {
+      status: 'searching',
+      attempts: attempt,
+      processingToken: token,
+      processingStartedAt: now,
+    },
   });
 
-  // If no rows updated, another worker already processed this
+  // If no rows updated, either completed or another worker has the lease
   if (updateResult.count === 0) {
     const currentGuide = await db.guide.findUnique({ where: { id: guideId } });
     return { success: currentGuide?.status === 'completed' };
@@ -253,13 +286,15 @@ async function processGuideInternal(
     ];
     const reason = failureReasons[Math.floor(Math.random() * failureReasons.length)];
 
-    await db.guide.update({
-      where: { id: guideId },
+    // Only finalize if we still hold the lease
+    await db.guide.updateMany({
+      where: { id: guideId, processingToken: token },
       data: {
         status: 'needs_attention',
         failureReason: reason,
         searchResults: [],
         htmlContent: generateSkeletonHTML(guide.name, guide.description),
+        processingToken: null,
       },
     });
     return { success: false };
@@ -273,31 +308,36 @@ async function processGuideInternal(
     if (attempt < 3) {
       throw error; // Let Temporal retry
     }
-    await db.guide.update({
-      where: { id: guideId },
+    // Only finalize if we still hold the lease
+    await db.guide.updateMany({
+      where: { id: guideId, processingToken: token },
       data: {
         status: 'needs_attention',
         failureReason: 'Search service unavailable after multiple attempts.',
         failureDetails: { error: (error as Error).message, attempts: attempt },
+        processingToken: null,
       },
     });
     return { success: false };
   }
 
   if (searchResults.length === 0) {
-    await db.guide.update({
-      where: { id: guideId },
+    // Only finalize if we still hold the lease
+    await db.guide.updateMany({
+      where: { id: guideId, processingToken: token },
       data: {
         status: 'needs_attention',
         failureReason: "We couldn't find relevant content in your documents for this guide.",
         searchResults: [],
+        processingToken: null,
       },
     });
     return { success: false };
   }
 
-  await db.guide.update({
-    where: { id: guideId },
+  // Transition to generating - keep the lease
+  await db.guide.updateMany({
+    where: { id: guideId, processingToken: token },
     data: {
       status: 'generating',
       // Prisma JSON fields accept plain objects - spread to ensure serializable
@@ -322,10 +362,17 @@ async function processGuideInternal(
       html = generateSkeletonHTML(guide.name, guide.description);
     }
 
-    await db.guide.update({
-      where: { id: guideId },
-      data: { status: 'completed', htmlContent: html },
+    // Only finalize if we still hold the lease
+    const finalizeResult = await db.guide.updateMany({
+      where: { id: guideId, processingToken: token },
+      data: { status: 'completed', htmlContent: html, processingToken: null },
     });
+
+    // If we didn't update, another worker took over - check if it succeeded
+    if (finalizeResult.count === 0) {
+      const currentGuide = await db.guide.findUnique({ where: { id: guideId } });
+      return { success: currentGuide?.status === 'completed' };
+    }
 
     return { success: true };
   } catch (error) {
@@ -333,14 +380,16 @@ async function processGuideInternal(
       throw error; // Let Temporal retry
     }
 
-    await db.guide.update({
-      where: { id: guideId },
+    // Only finalize if we still hold the lease
+    await db.guide.updateMany({
+      where: { id: guideId, processingToken: token },
       data: {
         status: 'needs_attention',
         failureReason:
           'Generation failed after multiple attempts. The content may need manual review.',
         failureDetails: { error: (error as Error).message, attempts: attempt },
         htmlContent: generateSkeletonHTML(guide.name, guide.description),
+        processingToken: null,
       },
     });
 

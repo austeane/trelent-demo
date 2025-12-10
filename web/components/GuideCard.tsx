@@ -1,25 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-
-interface SearchResult {
-  fileId: string;
-  filename: string;
-  snippet: string;
-  relevance: number;
-}
-
-interface Guide {
-  id: string;
-  name: string;
-  description: string;
-  status: string;
-  searchResults: SearchResult[] | null;
-  htmlContent: string | null;
-  failureReason: string | null;
-  failureDetails: Record<string, unknown> | null;
-  attempts: number;
-}
+import { GuideDTO } from '@/lib/types';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -53,7 +35,7 @@ export function GuideCard({
   guide,
   onRetry,
 }: {
-  guide: Guide;
+  guide: GuideDTO;
   onRetry?: (guideId: string) => void;
 }) {
   const [showPreview, setShowPreview] = useState(false);

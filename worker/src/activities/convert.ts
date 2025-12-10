@@ -7,6 +7,15 @@ const MOCK_CONFIG = {
   failureRate: 0.05,
 };
 
+// Lease expiry threshold - allow takeover after this duration
+const LEASE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+
+function generateProcessingToken(): string {
+  const ctx = Context.current();
+  const info = ctx.info;
+  return `${info.workflowExecution.workflowId}:${info.activityId}:${info.attempt}`;
+}
+
 async function simulateLatency(): Promise<void> {
   const duration =
     MOCK_CONFIG.minLatencyMs +
@@ -68,17 +77,31 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
     return { success: false };
   }
 
-  // Conditional update: only transition if still pending/converting
-  // This prevents race conditions with concurrent retries
+  const token = generateProcessingToken();
+  const now = new Date();
+  const leaseExpiry = new Date(now.getTime() - LEASE_EXPIRY_MS);
+
+  // Acquire lease: only from pending, OR from converting with expired lease
+  // This prevents concurrent execution while allowing recovery from stuck workers
   const updateResult = await db.file.updateMany({
     where: {
       id: fileId,
-      status: { in: ['pending', 'converting'] },
+      OR: [
+        { status: 'pending' },
+        {
+          status: 'converting',
+          processingStartedAt: { lt: leaseExpiry },
+        },
+      ],
     },
-    data: { status: 'converting' },
+    data: {
+      status: 'converting',
+      processingToken: token,
+      processingStartedAt: now,
+    },
   });
 
-  // If no rows updated, another worker already processed this
+  // If no rows updated, either already completed or another worker has the lease
   if (updateResult.count === 0) {
     const currentFile = await db.file.findUnique({ where: { id: fileId } });
     return { success: currentFile?.status === 'converted' };
@@ -87,11 +110,13 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
   await simulateLatency();
 
   if (shouldFail()) {
-    await db.file.update({
-      where: { id: fileId },
+    // Only finalize if we still hold the lease
+    await db.file.updateMany({
+      where: { id: fileId, processingToken: token },
       data: {
         status: 'failed',
         errorMessage: 'Document conversion failed: Unable to parse file format',
+        processingToken: null,
       },
     });
     return { success: false };
@@ -99,13 +124,21 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
 
   const markdown = generateMockMarkdown(file.filename);
 
-  await db.file.update({
-    where: { id: fileId },
+  // Only finalize if we still hold the lease
+  const finalizeResult = await db.file.updateMany({
+    where: { id: fileId, processingToken: token },
     data: {
       status: 'converted',
       markdownContent: markdown,
+      processingToken: null,
     },
   });
+
+  // If we didn't update, another worker took over - check if it succeeded
+  if (finalizeResult.count === 0) {
+    const currentFile = await db.file.findUnique({ where: { id: fileId } });
+    return { success: currentFile?.status === 'converted' };
+  }
 
   return { success: true };
 }
