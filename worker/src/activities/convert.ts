@@ -10,6 +10,14 @@ const MOCK_CONFIG = {
 // Lease expiry threshold - allow takeover after this duration
 const LEASE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
+// Custom error for lease conflicts - always retryable regardless of attempt count
+class LeaseHeldError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LeaseHeldError';
+  }
+}
+
 function generateProcessingToken(): string {
   const ctx = Context.current();
   const info = ctx.info;
@@ -104,7 +112,15 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
   // If no rows updated, either already completed or another worker has the lease
   if (updateResult.count === 0) {
     const currentFile = await db.file.findUnique({ where: { id: fileId } });
-    return { success: currentFile?.status === 'converted' };
+
+    // If terminal state, return appropriate result
+    if (currentFile?.status === 'converted') return { success: true };
+    if (currentFile?.status === 'failed') return { success: false };
+
+    // Still in progress - another worker has the lease. Throw LeaseHeldError to always retry.
+    throw new LeaseHeldError(
+      `File ${fileId} is in progress (status: ${currentFile?.status}), lease held by another worker`
+    );
   }
 
   await simulateLatency();

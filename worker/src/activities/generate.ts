@@ -18,6 +18,14 @@ const GENERATION_CONFIG = {
 // Lease expiry threshold - allow takeover after this duration
 const LEASE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
+// Custom error for lease conflicts - always retryable regardless of attempt count
+class LeaseHeldError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LeaseHeldError';
+  }
+}
+
 function generateProcessingToken(): string {
   const ctx = Context.current();
   const info = ctx.info;
@@ -66,9 +74,11 @@ async function mockSearch(runId: string, query: string): Promise<SearchResult[]>
     return [];
   }
 
+  // Only fetch id and filename - avoid pulling all markdown content
+  // This prevents O(files * guides) DB I/O at scale
   const files = await db.file.findMany({
     where: { runId, status: 'converted' },
-    select: { id: true, filename: true, markdownContent: true },
+    select: { id: true, filename: true },
   });
 
   if (files.length === 0) {
@@ -79,7 +89,13 @@ async function mockSearch(runId: string, query: string): Promise<SearchResult[]>
   const shuffled = files.sort(() => Math.random() - 0.5);
   const selected = shuffled.slice(0, numResults);
 
-  return selected.map((f, i) => ({
+  // Fetch markdown only for the selected files (2-4 files, not all)
+  const selectedWithContent = await db.file.findMany({
+    where: { id: { in: selected.map((f) => f.id) } },
+    select: { id: true, filename: true, markdownContent: true },
+  });
+
+  return selectedWithContent.map((f, i) => ({
     fileId: f.id,
     filename: f.filename,
     snippet: f.markdownContent?.slice(0, 200) || 'Content preview...',
@@ -202,6 +218,12 @@ export async function processGuide(
   try {
     return await processGuideInternal(runId, guideId, guide, attempt, isManualRetry);
   } catch (error) {
+    // LeaseHeldError is always retryable - another worker is actively processing
+    // Don't degrade to needs_attention just because we hit attempt limit during overlap
+    if (error instanceof LeaseHeldError) {
+      throw error;
+    }
+
     // If this is a retryable error (attempt < 3), let Temporal retry
     if (attempt < 3) {
       throw error;
@@ -271,7 +293,16 @@ async function processGuideInternal(
   // If no rows updated, either completed or another worker has the lease
   if (updateResult.count === 0) {
     const currentGuide = await db.guide.findUnique({ where: { id: guideId } });
-    return { success: currentGuide?.status === 'completed' };
+
+    // If terminal state, return appropriate result
+    if (currentGuide?.status === 'completed') return { success: true };
+    if (currentGuide?.status === 'needs_attention') return { success: false };
+
+    // Still in progress - another worker has the lease. Throw LeaseHeldError to always retry.
+    // This prevents "false failure" that causes incorrect run counters.
+    throw new LeaseHeldError(
+      `Guide ${guideId} is in progress (status: ${currentGuide?.status}), lease held by another worker`
+    );
   }
 
   // Check if this guide is marked for forced failure (demo mode)
@@ -306,6 +337,16 @@ async function processGuideInternal(
     searchResults = await mockSearch(runId, guide.description);
   } catch (error) {
     if (attempt < 3) {
+      // Release lease and reset to pending before throwing so Temporal retry can reacquire
+      await db.guide.updateMany({
+        where: { id: guideId, processingToken: token },
+        data: {
+          status: 'pending',
+          processingToken: null,
+          processingStartedAt: null,
+          failureDetails: { lastError: (error as Error).message, attempt },
+        },
+      });
       throw error; // Let Temporal retry
     }
     // Only finalize if we still hold the lease
@@ -377,6 +418,16 @@ async function processGuideInternal(
     return { success: true };
   } catch (error) {
     if (attempt < 3) {
+      // Release lease and reset to pending before throwing so Temporal retry can reacquire
+      await db.guide.updateMany({
+        where: { id: guideId, processingToken: token },
+        data: {
+          status: 'pending',
+          processingToken: null,
+          processingStartedAt: null,
+          failureDetails: { lastError: (error as Error).message, attempt },
+        },
+      });
       throw error; // Let Temporal retry
     }
 

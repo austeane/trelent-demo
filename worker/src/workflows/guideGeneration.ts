@@ -163,10 +163,9 @@ export async function guideGenerationWorkflow(
 
   // === Stage 3: Finalize ===
   progress.stage = 'complete';
-  await acts.finalizeRun(runId, {
-    completed: progress.completedGuides,
-    failed: progress.failedGuides,
-  });
+  // Use refinalizeRun to derive counts from DB ground truth
+  // This ensures run status matches actual guide statuses, not workflow counters
+  await acts.refinalizeRun(runId);
 }
 
 /**
