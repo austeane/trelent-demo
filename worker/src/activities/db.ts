@@ -1,8 +1,9 @@
 import { db } from '../lib/db';
+import { RunStatus, RunStage } from '@prisma/client';
 
 export async function updateRunStage(
   runId: string,
-  stage: string
+  stage: RunStage
 ): Promise<void> {
   await db.run.update({
     where: { id: runId },
@@ -67,13 +68,13 @@ export async function finalizeRun(
   runId: string,
   stats: { completed: number; failed: number }
 ): Promise<void> {
-  const status = stats.failed > 0 ? 'completed_with_errors' : 'completed';
+  const status: RunStatus = stats.failed > 0 ? 'completed_with_errors' : 'completed';
 
   await db.run.update({
     where: { id: runId },
     data: {
       status,
-      stage: 'complete',
+      stage: 'complete' as RunStage,
       completedAt: new Date(),
     },
   });
@@ -106,8 +107,8 @@ export async function refinalizeRun(runId: string): Promise<void> {
     (counts['searching'] || 0) + (counts['generating'] || 0);
 
   // Determine status
-  let status: string;
-  let stage: string;
+  let status: RunStatus;
+  let stage: RunStage;
 
   if (pending > 0 || inProgress > 0) {
     // Still processing

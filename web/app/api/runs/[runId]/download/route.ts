@@ -64,8 +64,8 @@ export async function GET(
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
 
-    // Return zip file
-    return new NextResponse(zipBuffer, {
+    // Return zip file - convert Buffer to Uint8Array for NextResponse
+    return new NextResponse(new Uint8Array(zipBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',

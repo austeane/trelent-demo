@@ -1,5 +1,6 @@
 import { Context } from '@temporalio/activity';
 import { db } from '../lib/db';
+import { GuideStatus } from '@prisma/client';
 
 const SEARCH_CONFIG = {
   minLatencyMs: 800,
@@ -178,7 +179,7 @@ export async function processGuide(
   const attempt = guide.attempts + 1;
 
   // Conditional update: only transition if in expected state
-  const validFromStates = isManualRetry
+  const validFromStates: GuideStatus[] = isManualRetry
     ? ['pending', 'needs_attention', 'searching', 'generating']
     : ['pending', 'searching', 'generating'];
 

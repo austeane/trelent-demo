@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTemporalClient, TASK_QUEUE } from '@/lib/temporal';
+import { Prisma } from '@prisma/client';
 
 export async function POST(
   request: NextRequest,
@@ -32,8 +33,8 @@ export async function POST(
       data: {
         status: 'pending',
         failureReason: null,
-        failureDetails: null,
-        searchResults: null,
+        failureDetails: Prisma.JsonNull,
+        searchResults: Prisma.JsonNull,
         htmlContent: null,
         forceFailure: false, // Clear forced failure for retry
         // Keep attempts count for degrading strategy
