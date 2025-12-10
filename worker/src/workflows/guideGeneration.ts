@@ -98,3 +98,30 @@ export async function guideGenerationWorkflow(
     failed: progress.failedGuides,
   });
 }
+
+/**
+ * Retry a single guide that previously failed.
+ * This is a separate workflow to keep history isolated and simple.
+ */
+export async function retryGuideWorkflow(
+  runId: string,
+  guideId: string
+): Promise<void> {
+  // Process the single guide
+  const result = await acts.processGuide(runId, guideId);
+
+  // Update run based on result
+  if (result.success) {
+    await acts.updateRunProgress(runId, {
+      completedGuides: 1, // Increment by 1
+    });
+  } else {
+    await acts.updateRunProgress(runId, {
+      failedGuides: 1, // Increment by 1
+    });
+  }
+
+  // Re-finalize the run to update status
+  // Get current counts from DB via activity
+  await acts.refinalizeRun(runId);
+}

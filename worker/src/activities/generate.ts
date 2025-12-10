@@ -229,7 +229,11 @@ export async function processGuide(
 
   await db.guide.update({
     where: { id: guideId },
-    data: { status: 'generating', searchResults: searchResults as any },
+    data: {
+      status: 'generating',
+      // Prisma JSON fields accept plain objects - spread to ensure serializable
+      searchResults: searchResults.map((r) => ({ ...r })),
+    },
   });
 
   // Step 2: Generate

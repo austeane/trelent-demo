@@ -23,7 +23,15 @@ export default function RunDetail() {
       </div>
 
       <div className="bg-white rounded-lg border p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Guides</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Guides</h2>
+          <a
+            href={`/api/runs/${runId}/download`}
+            className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+          >
+            Download all (ZIP)
+          </a>
+        </div>
         <GuideList runId={runId} />
       </div>
     </div>

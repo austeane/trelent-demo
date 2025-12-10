@@ -143,26 +143,49 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Start Temporal workflow
-    const client = await getTemporalClient();
+    // Start Temporal workflow with compensation on failure
     const workflowId = `run-${runId}`;
 
-    await client.workflow.start('guideGenerationWorkflow', {
-      taskQueue: TASK_QUEUE,
-      workflowId,
-      args: [runId, fileIds, guideIds],
-    });
-
-    await db.run.update({
-      where: { id: runId },
-      data: {
-        status: 'processing',
+    try {
+      const client = await getTemporalClient();
+      await client.workflow.start('guideGenerationWorkflow', {
+        taskQueue: TASK_QUEUE,
         workflowId,
-        startedAt: new Date(),
-      },
-    });
+        args: [runId, fileIds, guideIds],
+      });
 
-    return NextResponse.json({ runId, workflowId });
+      // Workflow started successfully - mark as processing
+      await db.run.update({
+        where: { id: runId },
+        data: {
+          status: 'processing',
+          workflowId,
+          startedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({ runId, workflowId });
+    } catch (workflowError) {
+      // Compensation: mark run as failed if workflow couldn't start
+      console.error('Failed to start workflow:', workflowError);
+
+      await db.run.update({
+        where: { id: runId },
+        data: {
+          status: 'failed',
+          errorMessage: `Failed to start workflow: ${(workflowError as Error).message}`,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Failed to start workflow',
+          details: (workflowError as Error).message,
+          runId // Return runId so user can see the failed run
+        },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('Failed to create run:', error);
     return NextResponse.json(

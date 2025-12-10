@@ -38,6 +38,24 @@ export function GuideList({ runId }: { runId: string }) {
   const [filter, setFilter] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [retryTrigger, setRetryTrigger] = useState(0);
+
+  const handleRetry = async (guideId: string) => {
+    try {
+      const res = await fetch(`/api/guides/${guideId}/retry`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to retry');
+      }
+      // Trigger a refresh of the guide list
+      setRetryTrigger((t) => t + 1);
+    } catch (err) {
+      console.error('Failed to retry guide:', err);
+      alert('Failed to retry guide. Please try again.');
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -66,7 +84,7 @@ export function GuideList({ runId }: { runId: string }) {
       active = false;
       clearInterval(interval);
     };
-  }, [runId, filter, page]);
+  }, [runId, filter, page, retryTrigger]);
 
   return (
     <div className="space-y-4">
@@ -105,7 +123,11 @@ export function GuideList({ runId }: { runId: string }) {
       ) : (
         <div className="space-y-4">
           {data?.guides.map((guide) => (
-            <GuideCard key={guide.id} guide={guide as any} />
+            <GuideCard
+              key={guide.id}
+              guide={guide as any}
+              onRetry={handleRetry}
+            />
           ))}
         </div>
       )}

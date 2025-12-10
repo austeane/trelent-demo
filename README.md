@@ -7,6 +7,8 @@ This repository is my answer—a working demo, not a slide deck.
 **Live Demo:** https://web-production-dc150.up.railway.app
 **Temporal UI:** https://temporal-ui-production-04cb.up.railway.app
 
+> **Note on Temporal UI:** The Temporal UI is intentionally left public for this demo so reviewers can inspect workflow execution history, activity retries, and event replay. In production, Temporal UI should be internal-only or behind authentication, as Temporal OSS has no built-in auth. The web app acts as the authenticated boundary—users interact with progress via the control plane, never directly with Temporal.
+
 ---
 
 ## Table of Contents
@@ -418,6 +420,61 @@ This lets interviewers see the error handling without relying on random chance.
 ### 5. **I document my decisions**
 - [DECISIONS.md](./DECISIONS.md) tracks choices, concerns, and tech debt
 - This README explains the "why" behind the "what"
+
+---
+
+## Scaling Considerations
+
+This demo handles dozens of files and guides. Here's how it would scale to thousands:
+
+### Workflow History Size
+
+Temporal stores every event (activity start, complete, retry) in the workflow history. For a run with 5,000 guides at 10 events each, that's 50,000+ events—approaching Temporal's recommended limits.
+
+**Mitigation: Child Workflows**
+```typescript
+// Instead of one workflow processing all guides:
+for (const chunk of chunks(guideIds, 100)) {
+  await executeChild(guideChunkWorkflow, { args: [runId, chunk] });
+}
+```
+
+Each child workflow has its own history. The parent just tracks completions.
+
+**Mitigation: Continue-As-New**
+```typescript
+// For very long-running workflows, periodically reset history:
+if (processedCount > 1000) {
+  await continueAsNew<typeof guideGenerationWorkflow>(runId, remainingIds);
+}
+```
+
+### Payload Sizes
+
+Temporal payloads have size limits (~2MB default). Guide HTML content could exceed this.
+
+**Current approach:** Store HTML in Postgres, Temporal only sees IDs.
+
+This is the "claim check" pattern—Temporal orchestrates, database stores large blobs.
+
+### Worker Scaling
+
+```typescript
+// Current: single worker process
+const worker = await Worker.create({
+  taskQueue: 'guide-generation',
+  maxConcurrentActivityTaskExecutions: 50,
+});
+```
+
+**Horizontal scaling:** Deploy multiple worker replicas on Railway. Temporal automatically distributes tasks. No code changes required—just increase replica count.
+
+### What I'd Monitor
+
+1. **Workflow latency (p99)** - Are runs taking longer?
+2. **Activity retry rate** - Are external services degrading?
+3. **Queue depth** - Do we need more workers?
+4. **History event count** - Approaching limits?
 
 ---
 

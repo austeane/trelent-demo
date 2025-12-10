@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
+// Stage labels match exactly what the worker sets in guideGenerationWorkflow.ts
 const STAGE_LABELS: Record<string, { label: string; description: string }> = {
   initializing: {
     label: 'Setting up',
@@ -9,19 +10,11 @@ const STAGE_LABELS: Record<string, { label: string; description: string }> = {
   },
   converting_documents: {
     label: 'Reading documents',
-    description: 'Converting PDFs and Word docs into a consistent format',
-  },
-  finding_content: {
-    label: 'Finding content',
-    description: 'Searching across your documents for each guide',
+    description: 'Converting PDFs and Word docs into searchable text',
   },
   writing_guides: {
     label: 'Writing guides',
-    description: 'Generating HTML guides from your source content',
-  },
-  finalizing: {
-    label: 'Finishing up',
-    description: 'Preparing your results',
+    description: 'Searching for content and generating HTML guides',
   },
   complete: {
     label: 'Done',
@@ -137,7 +130,15 @@ export function RunProgress({ runId }: { runId: string }) {
   const needsAttention = guideCounts.needs_attention || 0;
   const inProgress =
     run.totalGuides - completed - needsAttention - (guideCounts.pending || 0);
-  const progress =
+
+  // Document conversion progress
+  const docsProgress =
+    run.totalFiles > 0
+      ? Math.round((run.convertedFiles / run.totalFiles) * 100)
+      : 0;
+
+  // Guide generation progress
+  const guidesProgress =
     run.totalGuides > 0
       ? Math.round(((completed + needsAttention) / run.totalGuides) * 100)
       : 0;
@@ -159,17 +160,38 @@ export function RunProgress({ runId }: { runId: string }) {
         <p className="text-gray-500">{stage.description}</p>
       </div>
 
-      {/* Progress bar */}
-      <div>
-        <div className="flex justify-between text-sm text-gray-500 mb-1">
-          <span>Progress</span>
-          <span>{progress}%</span>
+      {/* Progress bars */}
+      <div className="space-y-3">
+        {/* Documents progress */}
+        <div>
+          <div className="flex justify-between text-sm text-gray-500 mb-1">
+            <span>Documents read</span>
+            <span>
+              {run.convertedFiles}/{run.totalFiles} ({docsProgress}%)
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className="bg-indigo-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${docsProgress}%` }}
+            />
+          </div>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-3">
-          <div
-            className="bg-blue-600 h-3 rounded-full transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          />
+
+        {/* Guides progress */}
+        <div>
+          <div className="flex justify-between text-sm text-gray-500 mb-1">
+            <span>Guides written</span>
+            <span>
+              {completed + needsAttention}/{run.totalGuides} ({guidesProgress}%)
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${guidesProgress}%` }}
+            />
+          </div>
         </div>
       </div>
 
