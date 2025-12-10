@@ -1,15 +1,22 @@
 {
   "name": "trelent-demo",
   "private": true,
-  "workspaces": ["web", "worker"],
+  "workspaces": [
+    "web",
+    "worker"
+  ],
   "scripts": {
     "dev": "docker-compose up -d && npm run dev:services",
     "dev:services": "concurrently \"npm run dev -w web\" \"npm run dev -w worker\"",
     "build": "npm run build -w web && npm run build -w worker",
     "db:migrate": "npm run db:migrate -w web",
-    "db:generate": "npm run db:generate -w web"
+    "db:generate": "npm run db:generate -w web",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck -w web && npm run typecheck -w worker"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "prettier": "^3.4.2"
   }
 }

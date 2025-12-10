@@ -53,10 +53,7 @@ This document provides comprehensive guidance on ${baseName.toLowerCase()} proce
 `;
 }
 
-export async function convertFile(
-  runId: string,
-  fileId: string
-): Promise<{ success: boolean }> {
+export async function convertFile(runId: string, fileId: string): Promise<{ success: boolean }> {
   const file = await db.file.findUnique({ where: { id: fileId } });
   if (!file) {
     throw new Error(`File not found: ${fileId}`);
@@ -76,7 +73,7 @@ export async function convertFile(
   const updateResult = await db.file.updateMany({
     where: {
       id: fileId,
-      status: { in: ['pending', 'converting'] }
+      status: { in: ['pending', 'converting'] },
     },
     data: { status: 'converting' },
   });

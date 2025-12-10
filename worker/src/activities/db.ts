@@ -1,10 +1,7 @@
 import { db } from '../lib/db';
 import { RunStatus, RunStage } from '@prisma/client';
 
-export async function updateRunStage(
-  runId: string,
-  stage: RunStage
-): Promise<void> {
+export async function updateRunStage(runId: string, stage: RunStage): Promise<void> {
   await db.run.update({
     where: { id: runId },
     data: { stage },
@@ -29,10 +26,7 @@ export async function updateRunProgress(
  * Atomically increment file conversion count.
  * Used by child workflows to safely update progress concurrently.
  */
-export async function incrementConvertedFiles(
-  runId: string,
-  count: number
-): Promise<void> {
+export async function incrementConvertedFiles(runId: string, count: number): Promise<void> {
   await db.run.update({
     where: { id: runId },
     data: {
@@ -103,8 +97,7 @@ export async function refinalizeRun(runId: string): Promise<void> {
   const completed = counts['completed'] || 0;
   const needsAttention = counts['needs_attention'] || 0;
   const pending = counts['pending'] || 0;
-  const inProgress =
-    (counts['searching'] || 0) + (counts['generating'] || 0);
+  const inProgress = (counts['searching'] || 0) + (counts['generating'] || 0);
 
   // Determine status
   let status: RunStatus;

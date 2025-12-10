@@ -78,12 +78,8 @@ export default function Dashboard() {
     <div className="max-w-4xl mx-auto py-8 px-4">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Trelent Guide Generator
-          </h1>
-          <p className="text-gray-500">
-            Durable document-to-guide pipeline demo
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Trelent Guide Generator</h1>
+          <p className="text-gray-500">Durable document-to-guide pipeline demo</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -106,10 +102,7 @@ export default function Dashboard() {
       {loading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="animate-pulse border rounded-lg p-4 bg-white"
-            >
+            <div key={i} className="animate-pulse border rounded-lg p-4 bg-white">
               <div className="h-5 bg-gray-200 rounded w-1/3 mb-2"></div>
               <div className="h-4 bg-gray-200 rounded w-1/2"></div>
             </div>
@@ -117,9 +110,7 @@ export default function Dashboard() {
         </div>
       ) : runs.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border">
-          <h2 className="text-lg font-medium text-gray-900 mb-2">
-            No runs yet
-          </h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-2">No runs yet</h2>
           <p className="text-gray-500 mb-4">
             Start your first guide generation run to see it here.
           </p>
@@ -162,9 +153,7 @@ export default function Dashboard() {
                   {run.completedGuides}/{run.totalGuides} guides completed
                 </span>
                 {run.failedGuides > 0 && (
-                  <span className="text-amber-600">
-                    {run.failedGuides} need attention
-                  </span>
+                  <span className="text-amber-600">{run.failedGuides} need attention</span>
                 )}
               </div>
             </div>
@@ -176,14 +165,13 @@ export default function Dashboard() {
         <h2 className="font-medium text-gray-900 mb-2">About this demo</h2>
         <p className="text-sm text-gray-600">
           This demo showcases a durable document-to-guide pipeline built with{' '}
-          <strong>Temporal</strong> for workflow orchestration. Each run
-          converts 8 sample documents and generates 12 guides, with realistic
-          latency and failure modes to demonstrate retry handling and partial
-          success states.
+          <strong>Temporal</strong> for workflow orchestration. Each run converts 8 sample documents
+          and generates 12 guides, with realistic latency and failure modes to demonstrate retry
+          handling and partial success states.
         </p>
         <p className="text-sm text-gray-600 mt-2">
-          <strong>Features:</strong> Bounded concurrency, progress tracking,
-          degrading retry strategies, and user-friendly failure explanations.
+          <strong>Features:</strong> Bounded concurrency, progress tracking, degrading retry
+          strategies, and user-friendly failure explanations.
         </p>
       </div>
     </div>

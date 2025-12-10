@@ -33,9 +33,7 @@ export async function guideChunkWorkflow(
 
   for (let i = 0; i < guideIds.length; i += BATCH_SIZE) {
     const batch = guideIds.slice(i, i + BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map((id) => acts.processGuide(runId, id))
-    );
+    const results = await Promise.allSettled(batch.map((id) => acts.processGuide(runId, id)));
 
     let batchSuccess = 0;
     let batchFailed = 0;

@@ -8,7 +8,8 @@
     "start": "next start",
     "db:migrate": "prisma migrate deploy",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -26,6 +27,7 @@
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
+    "prettier": "^3.7.4",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3"

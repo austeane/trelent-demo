@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { GuideStatus } from '@prisma/client';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { runId: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { runId: string } }) {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') as GuideStatus | null;
@@ -40,9 +37,6 @@ export async function GET(
     });
   } catch (error) {
     console.error('Failed to fetch guides:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch guides' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch guides' }, { status: 500 });
   }
 }

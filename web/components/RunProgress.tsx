@@ -94,12 +94,7 @@ export function RunProgress({ runId }: { runId: string }) {
           setError(null);
         }
 
-        if (
-          active &&
-          !['completed', 'completed_with_errors', 'failed'].includes(
-            json.run.status
-          )
-        ) {
+        if (active && !['completed', 'completed_with_errors', 'failed'].includes(json.run.status)) {
           setTimeout(poll, 2000);
         }
       } catch (err) {
@@ -115,9 +110,7 @@ export function RunProgress({ runId }: { runId: string }) {
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-        {error}
-      </div>
+      <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>
     );
   }
 
@@ -128,24 +121,17 @@ export function RunProgress({ runId }: { runId: string }) {
 
   const completed = guideCounts.completed || 0;
   const needsAttention = guideCounts.needs_attention || 0;
-  const inProgress =
-    run.totalGuides - completed - needsAttention - (guideCounts.pending || 0);
+  const inProgress = run.totalGuides - completed - needsAttention - (guideCounts.pending || 0);
 
   // Document conversion progress
   const docsProgress =
-    run.totalFiles > 0
-      ? Math.round((run.convertedFiles / run.totalFiles) * 100)
-      : 0;
+    run.totalFiles > 0 ? Math.round((run.convertedFiles / run.totalFiles) * 100) : 0;
 
   // Guide generation progress
   const guidesProgress =
-    run.totalGuides > 0
-      ? Math.round(((completed + needsAttention) / run.totalGuides) * 100)
-      : 0;
+    run.totalGuides > 0 ? Math.round(((completed + needsAttention) / run.totalGuides) * 100) : 0;
 
-  const isFinished = ['completed', 'completed_with_errors', 'failed'].includes(
-    run.status
-  );
+  const isFinished = ['completed', 'completed_with_errors', 'failed'].includes(run.status);
 
   return (
     <div className="space-y-6">
@@ -153,9 +139,7 @@ export function RunProgress({ runId }: { runId: string }) {
       <div>
         <div className="flex items-center gap-2">
           <h2 className="text-xl font-semibold text-gray-900">{stage.label}</h2>
-          {!isFinished && (
-            <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>
-          )}
+          {!isFinished && <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>}
         </div>
         <p className="text-gray-500">{stage.description}</p>
       </div>

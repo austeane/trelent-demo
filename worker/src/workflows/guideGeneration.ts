@@ -55,7 +55,7 @@ async function executeChildrenThrottled<T>(
 
   for (let i = 0; i < tasks.length; i += maxConcurrent) {
     const batch = tasks.slice(i, i + maxConcurrent);
-    const batchResults = await Promise.allSettled(batch.map(fn => fn()));
+    const batchResults = await Promise.allSettled(batch.map((fn) => fn()));
     results.push(...batchResults);
   }
 
@@ -87,15 +87,13 @@ export async function guideGenerationWorkflow(
   // Execute file chunks with throttling to avoid flooding the task queue
   // Process MAX_CONCURRENT_CHILDREN chunks at a time
   const fileResults = await executeChildrenThrottled(
-    fileChunks.map((chunk, index) => () =>
-      executeChild<typeof import('./fileChunkWorkflow').fileChunkWorkflow>(
-        'fileChunkWorkflow',
-        {
+    fileChunks.map(
+      (chunk, index) => () =>
+        executeChild<typeof import('./fileChunkWorkflow').fileChunkWorkflow>('fileChunkWorkflow', {
           workflowId: `${runId}-file-chunk-${index}`,
           args: [runId, chunk, index],
           parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
-        }
-      )
+        })
     ),
     MAX_CONCURRENT_CHILDREN
   );
@@ -115,15 +113,16 @@ export async function guideGenerationWorkflow(
 
   // Execute guide chunks with throttling to avoid flooding the task queue
   const guideResults = await executeChildrenThrottled(
-    guideChunks.map((chunk, index) => () =>
-      executeChild<typeof import('./guideChunkWorkflow').guideChunkWorkflow>(
-        'guideChunkWorkflow',
-        {
-          workflowId: `${runId}-guide-chunk-${index}`,
-          args: [runId, chunk, index],
-          parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
-        }
-      )
+    guideChunks.map(
+      (chunk, index) => () =>
+        executeChild<typeof import('./guideChunkWorkflow').guideChunkWorkflow>(
+          'guideChunkWorkflow',
+          {
+            workflowId: `${runId}-guide-chunk-${index}`,
+            args: [runId, chunk, index],
+            parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
+          }
+        )
     ),
     MAX_CONCURRENT_CHILDREN
   );
@@ -148,10 +147,7 @@ export async function guideGenerationWorkflow(
  * Retry a single guide that previously failed.
  * This is a separate workflow to keep history isolated and simple.
  */
-export async function retryGuideWorkflow(
-  runId: string,
-  guideId: string
-): Promise<void> {
+export async function retryGuideWorkflow(runId: string, guideId: string): Promise<void> {
   // Process the single guide with isManualRetry=true
   // This bypasses the idempotency guard for needs_attention status
   await acts.processGuide(runId, guideId, true);

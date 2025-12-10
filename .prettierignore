@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+out/
+
+# Generated files
+*.generated.ts
+web/prisma/migrations/
+worker/prisma/migrations/
+
+# Lock files
+package-lock.json
+
+# Misc
+.git/
+*.md

@@ -101,9 +101,7 @@ export function GuideCard({
 
       {guide.status === 'needs_attention' && (
         <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded">
-          <p className="text-sm text-amber-800 font-medium">
-            {guide.failureReason}
-          </p>
+          <p className="text-sm text-amber-800 font-medium">{guide.failureReason}</p>
 
           {guide.searchResults && guide.searchResults.length > 0 && (
             <div className="mt-2 text-xs text-amber-700">
@@ -120,9 +118,7 @@ export function GuideCard({
 
           <div className="mt-3 flex items-center justify-between">
             {guide.attempts > 0 && (
-              <p className="text-xs text-amber-600">
-                Attempted {guide.attempts} time(s)
-              </p>
+              <p className="text-xs text-amber-600">Attempted {guide.attempts} time(s)</p>
             )}
             {onRetry && (
               <button

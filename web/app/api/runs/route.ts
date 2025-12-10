@@ -5,19 +5,115 @@ import { getTemporalClient, TASK_QUEUE } from '@/lib/temporal';
 
 // Document categories for realistic variety
 const DOC_CATEGORIES = [
-  { prefix: 'HR', types: ['Policy', 'Handbook', 'Guidelines', 'Procedure', 'Form', 'Template', 'Checklist', 'Manual'] },
-  { prefix: 'IT', types: ['Security', 'Setup', 'Troubleshooting', 'Access', 'Configuration', 'Standards', 'Protocol', 'Guide'] },
-  { prefix: 'Finance', types: ['Expense', 'Budget', 'Approval', 'Reimbursement', 'Audit', 'Report', 'Policy', 'Procedure'] },
-  { prefix: 'Operations', types: ['Process', 'Workflow', 'Checklist', 'Standards', 'Compliance', 'SOP', 'Manual', 'Guide'] },
-  { prefix: 'Sales', types: ['Proposal', 'Contract', 'Pricing', 'Commission', 'Territory', 'Pipeline', 'Forecast', 'Report'] },
-  { prefix: 'Legal', types: ['Agreement', 'Terms', 'Privacy', 'Compliance', 'NDA', 'Contract', 'Policy', 'Review'] },
-  { prefix: 'Engineering', types: ['Architecture', 'Review', 'Standards', 'Testing', 'Deployment', 'Design', 'Spec', 'RFC'] },
-  { prefix: 'Marketing', types: ['Brand', 'Campaign', 'Guidelines', 'Assets', 'Messaging', 'Strategy', 'Analytics', 'Report'] },
+  {
+    prefix: 'HR',
+    types: [
+      'Policy',
+      'Handbook',
+      'Guidelines',
+      'Procedure',
+      'Form',
+      'Template',
+      'Checklist',
+      'Manual',
+    ],
+  },
+  {
+    prefix: 'IT',
+    types: [
+      'Security',
+      'Setup',
+      'Troubleshooting',
+      'Access',
+      'Configuration',
+      'Standards',
+      'Protocol',
+      'Guide',
+    ],
+  },
+  {
+    prefix: 'Finance',
+    types: [
+      'Expense',
+      'Budget',
+      'Approval',
+      'Reimbursement',
+      'Audit',
+      'Report',
+      'Policy',
+      'Procedure',
+    ],
+  },
+  {
+    prefix: 'Operations',
+    types: [
+      'Process',
+      'Workflow',
+      'Checklist',
+      'Standards',
+      'Compliance',
+      'SOP',
+      'Manual',
+      'Guide',
+    ],
+  },
+  {
+    prefix: 'Sales',
+    types: [
+      'Proposal',
+      'Contract',
+      'Pricing',
+      'Commission',
+      'Territory',
+      'Pipeline',
+      'Forecast',
+      'Report',
+    ],
+  },
+  {
+    prefix: 'Legal',
+    types: ['Agreement', 'Terms', 'Privacy', 'Compliance', 'NDA', 'Contract', 'Policy', 'Review'],
+  },
+  {
+    prefix: 'Engineering',
+    types: [
+      'Architecture',
+      'Review',
+      'Standards',
+      'Testing',
+      'Deployment',
+      'Design',
+      'Spec',
+      'RFC',
+    ],
+  },
+  {
+    prefix: 'Marketing',
+    types: [
+      'Brand',
+      'Campaign',
+      'Guidelines',
+      'Assets',
+      'Messaging',
+      'Strategy',
+      'Analytics',
+      'Report',
+    ],
+  },
 ];
 
 const FILE_EXTENSIONS = ['.pdf', '.docx', '.doc', '.txt', '.md'];
 
-const GUIDE_ACTIONS = ['How to', 'Guide for', 'Process for', 'Steps to', 'Understanding', 'Managing', 'Implementing', 'Configuring'];
+const GUIDE_ACTIONS = [
+  'How to',
+  'Guide for',
+  'Process for',
+  'Steps to',
+  'Understanding',
+  'Managing',
+  'Implementing',
+  'Configuring',
+];
 
 function generateSampleFiles(count: number): Array<{ filename: string; hash: string }> {
   const files: Array<{ filename: string; hash: string }> = [];
@@ -47,7 +143,8 @@ function generateSampleGuides(count: number): Array<{ name: string; description:
   for (let i = 0; i < count; i++) {
     const category = DOC_CATEGORIES[i % totalCategories];
     const action = GUIDE_ACTIONS[Math.floor(i / totalCategories) % totalActions];
-    const docType = category.types[Math.floor(i / (totalCategories * totalActions)) % category.types.length];
+    const docType =
+      category.types[Math.floor(i / (totalCategories * totalActions)) % category.types.length];
 
     guides.push({
       name: `${action} ${category.prefix} ${docType}`,
@@ -178,7 +275,7 @@ export async function POST(request: NextRequest) {
         {
           error: 'Failed to start workflow',
           details: (workflowError as Error).message,
-          runId // Return runId so user can see the failed run
+          runId, // Return runId so user can see the failed run
         },
         { status: 500 }
       );
@@ -201,9 +298,6 @@ export async function GET() {
     return NextResponse.json(runs);
   } catch (error) {
     console.error('Failed to fetch runs:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch runs' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch runs' }, { status: 500 });
   }
 }

@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import JSZip from 'jszip';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { runId: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { runId: string } }) {
   const { runId } = params;
 
   try {
@@ -32,10 +29,7 @@ export async function GET(
     });
 
     if (guides.length === 0) {
-      return NextResponse.json(
-        { error: 'No completed guides to download' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'No completed guides to download' }, { status: 400 });
     }
 
     // Create zip file

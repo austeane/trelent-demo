@@ -27,8 +27,7 @@ async function simulateLatency(
   label: string
 ): Promise<void> {
   const duration =
-    config.minLatencyMs +
-    Math.random() * (config.maxLatencyMs - config.minLatencyMs);
+    config.minLatencyMs + Math.random() * (config.maxLatencyMs - config.minLatencyMs);
 
   const chunks = Math.ceil(duration / 1000);
   for (let i = 0; i < chunks; i++) {
@@ -37,10 +36,7 @@ async function simulateLatency(
   }
 }
 
-async function mockSearch(
-  runId: string,
-  query: string
-): Promise<SearchResult[]> {
+async function mockSearch(runId: string, query: string): Promise<SearchResult[]> {
   await simulateLatency(SEARCH_CONFIG, 'Searching');
 
   if (Math.random() < SEARCH_CONFIG.failureRate) {
@@ -72,11 +68,7 @@ async function mockSearch(
   }));
 }
 
-function generateMockHTML(
-  guideName: string,
-  description: string,
-  sources: SearchResult[]
-): string {
+function generateMockHTML(guideName: string, description: string, sources: SearchResult[]): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -186,7 +178,7 @@ export async function processGuide(
   const updateResult = await db.guide.updateMany({
     where: {
       id: guideId,
-      status: { in: validFromStates }
+      status: { in: validFromStates },
     },
     data: { status: 'searching', attempts: attempt },
   });
@@ -245,8 +237,7 @@ export async function processGuide(
       where: { id: guideId },
       data: {
         status: 'needs_attention',
-        failureReason:
-          "We couldn't find relevant content in your documents for this guide.",
+        failureReason: "We couldn't find relevant content in your documents for this guide.",
         searchResults: [],
       },
     });
@@ -274,11 +265,7 @@ export async function processGuide(
     if (attempt === 1) {
       html = generateMockHTML(guide.name, guide.description, searchResults);
     } else if (attempt === 2) {
-      html = generateMockHTML(
-        guide.name,
-        guide.description,
-        searchResults.slice(0, 2)
-      );
+      html = generateMockHTML(guide.name, guide.description, searchResults.slice(0, 2));
     } else {
       html = generateSkeletonHTML(guide.name, guide.description);
     }

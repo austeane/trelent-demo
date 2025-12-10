@@ -33,9 +33,7 @@ export async function fileChunkWorkflow(
 
   for (let i = 0; i < fileIds.length; i += BATCH_SIZE) {
     const batch = fileIds.slice(i, i + BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map((id) => acts.convertFile(runId, id))
-    );
+    const results = await Promise.allSettled(batch.map((id) => acts.convertFile(runId, id)));
 
     let batchSuccess = 0;
     for (const r of results) {

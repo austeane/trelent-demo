@@ -11,10 +11,7 @@ export default function RunDetail() {
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
-      <Link
-        href="/"
-        className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
-      >
+      <Link href="/" className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block">
         ← Back to Dashboard
       </Link>
 

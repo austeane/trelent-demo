@@ -3,10 +3,7 @@ import { db } from '@/lib/db';
 import { getTemporalClient, TASK_QUEUE } from '@/lib/temporal';
 import { Prisma } from '@prisma/client';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { guideId: string } }
-) {
+export async function POST(request: NextRequest, { params }: { params: { guideId: string } }) {
   const { guideId } = params;
 
   try {
@@ -21,10 +18,7 @@ export async function POST(
     }
 
     if (guide.status !== 'needs_attention') {
-      return NextResponse.json(
-        { error: 'Guide is not in a retryable state' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Guide is not in a retryable state' }, { status: 400 });
     }
 
     // Reset guide to pending state

@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { runId: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { runId: string } }) {
   try {
     const run = await db.run.findUnique({
       where: { id: params.runId },
@@ -30,18 +27,11 @@ export async function GET(
 
     return NextResponse.json({
       run,
-      guideCounts: Object.fromEntries(
-        guideCounts.map((g) => [g.status, g._count])
-      ),
-      fileCounts: Object.fromEntries(
-        fileCounts.map((f) => [f.status, f._count])
-      ),
+      guideCounts: Object.fromEntries(guideCounts.map((g) => [g.status, g._count])),
+      fileCounts: Object.fromEntries(fileCounts.map((f) => [f.status, f._count])),
     });
   } catch (error) {
     console.error('Failed to fetch run:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch run' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch run' }, { status: 500 });
   }
 }
