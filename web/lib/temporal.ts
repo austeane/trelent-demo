@@ -9,7 +9,12 @@ export async function getTemporalClient(): Promise<Client> {
   const address = process.env.TEMPORAL_ADDRESS || 'localhost:7233';
 
   if (!connectionPromise) {
-    connectionPromise = Connection.connect({ address });
+    // Reset cache on failure so subsequent requests can retry
+    connectionPromise = Connection.connect({ address }).catch((err) => {
+      connectionPromise = null;
+      client = null;
+      throw err;
+    });
   }
 
   const connection = await connectionPromise;

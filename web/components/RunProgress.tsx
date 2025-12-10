@@ -116,16 +116,18 @@ export function RunProgress({ runId }: { runId: string }) {
 
   if (!data) return <LoadingSkeleton />;
 
-  const { run, guideCounts } = data;
+  const { run, guideCounts, fileCounts } = data;
   const stage = STAGE_LABELS[run.stage] || STAGE_LABELS.initializing;
 
   const completed = guideCounts.completed || 0;
   const needsAttention = guideCounts.needs_attention || 0;
   const inProgress = run.totalGuides - completed - needsAttention - (guideCounts.pending || 0);
 
-  // Document conversion progress
-  const docsProgress =
-    run.totalFiles > 0 ? Math.round((run.convertedFiles / run.totalFiles) * 100) : 0;
+  // Document conversion progress - include both converted AND failed as "processed"
+  const filesConverted = fileCounts.converted || 0;
+  const filesFailed = fileCounts.failed || 0;
+  const filesProcessed = filesConverted + filesFailed;
+  const docsProgress = run.totalFiles > 0 ? Math.round((filesProcessed / run.totalFiles) * 100) : 0;
 
   // Guide generation progress
   const guidesProgress =
@@ -149,9 +151,12 @@ export function RunProgress({ runId }: { runId: string }) {
         {/* Documents progress */}
         <div>
           <div className="flex justify-between text-sm text-gray-500 mb-1">
-            <span>Documents read</span>
+            <span>Documents processed</span>
             <span>
-              {run.convertedFiles}/{run.totalFiles} ({docsProgress}%)
+              {filesProcessed}/{run.totalFiles}
+              {filesFailed > 0 && (
+                <span className="text-amber-600 ml-1">({filesFailed} failed)</span>
+              )}
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">

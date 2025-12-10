@@ -3,6 +3,9 @@ import { v4 as uuid } from 'uuid';
 import { db } from '@/lib/db';
 import { getTemporalClient, TASK_QUEUE } from '@/lib/temporal';
 
+// Force Node.js runtime (Temporal gRPC client doesn't work in Edge)
+export const runtime = 'nodejs';
+
 // Document categories for realistic variety
 const DOC_CATEGORIES = [
   {

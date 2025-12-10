@@ -15,6 +15,16 @@ const GENERATION_CONFIG = {
   failureRate: 0.04,
 };
 
+// Escape HTML to prevent XSS
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 interface SearchResult {
   fileId: string;
   filename: string;
@@ -69,12 +79,16 @@ async function mockSearch(runId: string, query: string): Promise<SearchResult[]>
 }
 
 function generateMockHTML(guideName: string, description: string, sources: SearchResult[]): string {
+  // Escape user inputs to prevent XSS
+  const safeName = escapeHtml(guideName);
+  const safeDesc = escapeHtml(description);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${guideName}</title>
+  <title>${safeName}</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
     h1 { color: #1a1a1a; border-bottom: 2px solid #e5e5e5; padding-bottom: 0.5rem; }
@@ -87,12 +101,12 @@ function generateMockHTML(guideName: string, description: string, sources: Searc
   </style>
 </head>
 <body>
-  <h1>${guideName}</h1>
-  <p class="description">${description}</p>
+  <h1>${safeName}</h1>
+  <p class="description">${safeDesc}</p>
 
   <div class="content">
     <h2>Overview</h2>
-    <p>This guide provides step-by-step instructions for ${guideName.toLowerCase()}. Follow these procedures to ensure compliance with company policies and best practices.</p>
+    <p>This guide provides step-by-step instructions for ${safeName.toLowerCase()}. Follow these procedures to ensure compliance with company policies and best practices.</p>
 
     <h2>Prerequisites</h2>
     <ul>
@@ -117,7 +131,7 @@ function generateMockHTML(guideName: string, description: string, sources: Searc
   <div class="sources">
     <h3>Source Documents</h3>
     <ul>
-      ${sources.map((s) => `<li>${s.filename} (${Math.round(s.relevance * 100)}% relevant)</li>`).join('\n      ')}
+      ${sources.map((s) => `<li>${escapeHtml(s.filename)} (${Math.round(s.relevance * 100)}% relevant)</li>`).join('\n      ')}
     </ul>
   </div>
 </body>
@@ -125,11 +139,15 @@ function generateMockHTML(guideName: string, description: string, sources: Searc
 }
 
 function generateSkeletonHTML(guideName: string, description: string): string {
+  // Escape user inputs to prevent XSS
+  const safeName = escapeHtml(guideName);
+  const safeDesc = escapeHtml(description);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>${guideName} - Needs Review</title>
+  <title>${safeName} - Needs Review</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
     .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 1rem; border-radius: 8px; margin-bottom: 2rem; }
@@ -140,8 +158,8 @@ function generateSkeletonHTML(guideName: string, description: string): string {
     <strong>⚠️ This guide requires manual review</strong>
     <p>Automatic generation encountered issues. Please review and complete this guide manually.</p>
   </div>
-  <h1>${guideName}</h1>
-  <p>${description}</p>
+  <h1>${safeName}</h1>
+  <p>${safeDesc}</p>
   <h2>Content</h2>
   <p><em>[Content generation incomplete - manual input required]</em></p>
 </body>

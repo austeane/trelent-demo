@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import JSZip from 'jszip';
 
+// Force Node.js runtime (JSZip + Prisma need Node APIs)
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest, { params }: { params: { runId: string } }) {
   const { runId } = params;
 
@@ -23,6 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: { runId: s
         htmlContent: { not: null },
       },
       select: {
+        id: true,
         name: true,
         htmlContent: true,
       },
@@ -34,13 +38,20 @@ export async function GET(request: NextRequest, { params }: { params: { runId: s
 
     // Create zip file
     const zip = new JSZip();
+    const usedFilenames = new Set<string>();
 
     for (const guide of guides) {
       // Create a safe filename
-      const filename = guide.name
+      let filename = guide.name
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '');
+
+      // Handle duplicate filenames by appending guide ID suffix
+      if (usedFilenames.has(filename)) {
+        filename = `${filename}-${guide.id.slice(0, 8)}`;
+      }
+      usedFilenames.add(filename);
 
       zip.file(`${filename}.html`, guide.htmlContent || '');
     }

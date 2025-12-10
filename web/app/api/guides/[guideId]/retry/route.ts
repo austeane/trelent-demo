@@ -3,6 +3,9 @@ import { db } from '@/lib/db';
 import { getTemporalClient, TASK_QUEUE } from '@/lib/temporal';
 import { Prisma } from '@prisma/client';
 
+// Force Node.js runtime (Temporal gRPC client doesn't work in Edge)
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest, { params }: { params: { guideId: string } }) {
   const { guideId } = params;
 
@@ -35,12 +38,11 @@ export async function POST(request: NextRequest, { params }: { params: { guideId
       },
     });
 
-    // Update run counts
+    // Set run back to processing state (don't mutate counters - refinalizeRun derives them)
     await db.run.update({
       where: { id: guide.runId },
       data: {
-        failedGuides: { decrement: 1 },
-        status: 'processing', // Set back to processing
+        status: 'processing',
         stage: 'writing_guides',
       },
     });
