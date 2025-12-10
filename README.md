@@ -29,6 +29,7 @@ I built a working app (not a design doc).
 ## What's mocked vs real
 
 **Real**
+
 - Temporal orchestration (workflows + retries + durable execution)
 - Postgres-backed run/file/guide state
 - UI progress + pagination + search + retry flow
@@ -36,11 +37,13 @@ I built a working app (not a design doc).
 - Idempotent activities with conditional state transitions
 
 **Mocked**
+
 - Document conversion API (simulated latency + failure rate)
 - Search API (simulated latency + "no results" cases)
 - LLM generation (simulated latency + failure rate + degrade-to-skeleton)
 
 Mocks live in:
+
 - `worker/src/activities/convert.ts`
 - `worker/src/activities/generate.ts`
 
@@ -72,6 +75,7 @@ Temporal orchestrates. Postgres is the queryable product state for the UI.
 ## Why Temporal (short version)
 
 I used Temporal because the core problem is **durable orchestration over slow/unreliable dependencies**:
+
 - Automatic retries with backoff per activity
 - Heartbeats for stuck/long activities
 - Workflow execution history for debugging
@@ -91,6 +95,7 @@ A single workflow processing thousands of items can hit Temporal history limits 
 **Verified at scale:** 5,000 files processed at ~760-800 files/minute.
 
 Relevant files:
+
 - `worker/src/workflows/guideGeneration.ts` (parent + retry workflow)
 - `worker/src/workflows/fileChunkWorkflow.ts`
 - `worker/src/workflows/guideChunkWorkflow.ts`
@@ -115,10 +120,12 @@ This prevents concurrent execution of the same activity across multiple workers,
 A run completes even if some guides need manual attention.
 
 Guide statuses:
+
 - `completed`
 - `needs_attention` (actionable failures, not stack traces)
 
 The UI surfaces failures in user terms:
+
 - "We couldn't find relevant content for this guide"
 - "Search service unavailable after multiple attempts"
 
@@ -141,6 +148,7 @@ And includes evidence (closest matches/snippets) + **Try again** button.
 ## Run locally
 
 Prereqs:
+
 - Node 20+
 - Docker
 
@@ -159,6 +167,7 @@ npm run dev
 ```
 
 Open:
+
 - Web: http://localhost:3000
 - Temporal UI: http://localhost:8080
 - Temporal gRPC: localhost:7233
@@ -190,19 +199,10 @@ curl -X POST http://localhost:3000/api/runs \
 
 ## Files of interest
 
-| File | What it demonstrates |
-|------|---------------------|
-| `worker/src/workflows/guideGeneration.ts` | Parent workflow + throttled child execution |
-| `worker/src/activities/generate.ts` | Idempotent activities + degrading retry |
-| `worker/src/activities/convert.ts` | Heartbeats + conditional state transitions |
-| `web/app/api/runs/route.ts` | Failure-atomic run creation with compensation |
-| `web/components/RunProgress.tsx` | Real-time polling + stage-based UX |
-
----
-
-## Questions?
-
-Happy to discuss any technical decision in depth.
-
-**Austin Eaton**
-[GitHub](https://github.com/austeane)
+| File                                        | What it demonstrates                          |
+| ------------------------------------------- | --------------------------------------------- |
+| `worker/src/workflows/guideGeneration.ts` | Parent workflow + throttled child execution   |
+| `worker/src/activities/generate.ts`       | Idempotent activities + degrading retry       |
+| `worker/src/activities/convert.ts`        | Heartbeats + conditional state transitions    |
+| `web/app/api/runs/route.ts`               | Failure-atomic run creation with compensation |
+| `web/components/RunProgress.tsx`          | Real-time polling + stage-based UX            |
