@@ -6,6 +6,42 @@ import { getTemporalClient, TASK_QUEUE } from '@/lib/temporal';
 // Force Node.js runtime (Temporal gRPC client doesn't work in Edge)
 export const runtime = 'nodejs';
 
+// Simple in-memory rate limiter for demo protection
+// In production, use Redis or similar
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 5; // 5 runs per minute per IP
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  // Clean up old entries periodically
+  if (rateLimitMap.size > 1000) {
+    for (const [key, value] of rateLimitMap.entries()) {
+      if (now > value.resetTime) {
+        rateLimitMap.delete(key);
+      }
+    }
+  }
+
+  if (!entry || now > entry.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true };
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return { allowed: false, retryAfter: Math.ceil((entry.resetTime - now) / 1000) };
+  }
+
+  entry.count++;
+  return { allowed: true };
+}
+
+// Lower caps for public demo to prevent DoS
+const MAX_FILES_PUBLIC = 1000;
+const MAX_GUIDES_PUBLIC = 100;
+
 // Document categories for realistic variety
 const DOC_CATEGORIES = [
   {
@@ -160,13 +196,26 @@ function generateSampleGuides(count: number): Array<{ name: string; description:
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const rateLimit = checkRateLimit(ip);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before creating another run.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rateLimit.retryAfter || 60) },
+        }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const name = body.name || `Guide Generation Run - ${new Date().toLocaleDateString()}`;
 
     // Configurable scale - defaults to demo size (8 files, 12 guides)
-    // Can scale up to 10K files, 500 guides
-    const fileCount = Math.min(Math.max(body.fileCount || 8, 1), 10000);
-    const guideCount = Math.min(Math.max(body.guideCount || 12, 1), 500);
+    // Lower caps for public demo to prevent DoS
+    const fileCount = Math.min(Math.max(body.fileCount || 8, 1), MAX_FILES_PUBLIC);
+    const guideCount = Math.min(Math.max(body.guideCount || 12, 1), MAX_GUIDES_PUBLIC);
 
     // Failure rate as percentage (0-100), defaults to 0
     const failureRate = Math.min(Math.max(body.failureRate || 0, 0), 100);

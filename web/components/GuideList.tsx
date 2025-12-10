@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { GuideCard } from './GuideCard';
 
 interface Guide {
@@ -25,6 +25,19 @@ interface GuidesResponse {
   };
 }
 
+interface RunStatus {
+  run: {
+    status: string;
+  };
+  guideCounts: {
+    needs_attention?: number;
+    completed?: number;
+    pending?: number;
+    searching?: number;
+    generating?: number;
+  };
+}
+
 const STATUS_FILTERS = [
   { value: '', label: 'All' },
   { value: 'completed', label: 'Completed' },
@@ -41,6 +54,9 @@ export function GuideList({ runId }: { runId: string }) {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [retryTrigger, setRetryTrigger] = useState(0);
+  const [runFinished, setRunFinished] = useState(false);
+  const [needsAttentionCount, setNeedsAttentionCount] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleRetry = async (guideId: string) => {
     try {
@@ -78,9 +94,32 @@ export function GuideList({ runId }: { runId: string }) {
         if (filter) params.set('status', filter);
         if (search) params.set('search', search);
 
-        const res = await fetch(`/api/runs/${runId}/guides?${params}`);
-        const json = await res.json();
-        if (active) setData(json);
+        // Fetch guides and run status in parallel
+        const [guidesRes, runRes] = await Promise.all([
+          fetch(`/api/runs/${runId}/guides?${params}`),
+          fetch(`/api/runs/${runId}`),
+        ]);
+
+        const guidesJson = await guidesRes.json();
+        const runJson: RunStatus = await runRes.json();
+
+        if (active) {
+          setData(guidesJson);
+          setNeedsAttentionCount(runJson.guideCounts?.needs_attention || 0);
+
+          // Check if run is finished
+          const isFinished = ['completed', 'completed_with_errors', 'failed'].includes(
+            runJson.run.status
+          );
+          if (isFinished) {
+            setRunFinished(true);
+            // Stop polling
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
+          }
+        }
       } catch (err) {
         console.error('Failed to fetch guides:', err);
       } finally {
@@ -90,16 +129,42 @@ export function GuideList({ runId }: { runId: string }) {
 
     fetchGuides();
 
-    // Poll while there are pending/in-progress guides
-    const interval = setInterval(fetchGuides, 3000);
+    // Only poll if run is not finished
+    if (!runFinished) {
+      intervalRef.current = setInterval(fetchGuides, 3000);
+    }
+
     return () => {
       active = false;
-      clearInterval(interval);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
     };
-  }, [runId, filter, search, page, retryTrigger]);
+  }, [runId, filter, search, page, retryTrigger, runFinished]);
 
   return (
     <div className="space-y-4">
+      {/* Review prompt when run finished with needs_attention guides */}
+      {runFinished && needsAttentionCount > 0 && filter !== 'needs_attention' && (
+        <button
+          onClick={() => {
+            setFilter('needs_attention');
+            setPage(1);
+          }}
+          className="w-full p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 hover:bg-amber-100 transition-colors flex items-center justify-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+          Review {needsAttentionCount} guide{needsAttentionCount > 1 ? 's' : ''} needing attention
+        </button>
+      )}
+
       {/* Search and Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">

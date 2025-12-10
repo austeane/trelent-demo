@@ -75,6 +75,21 @@ export async function finalizeRun(
 }
 
 /**
+ * Mark a run as failed due to an unexpected error.
+ */
+export async function markRunFailed(runId: string, errorMessage: string): Promise<void> {
+  await db.run.update({
+    where: { id: runId },
+    data: {
+      status: 'failed' as RunStatus,
+      stage: 'complete' as RunStage,
+      errorMessage,
+      completedAt: new Date(),
+    },
+  });
+}
+
+/**
  * Re-finalize a run after a guide retry.
  * Reads current counts from DB and updates run status accordingly.
  */

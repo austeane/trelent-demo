@@ -98,11 +98,24 @@ export async function guideGenerationWorkflow(
     MAX_CONCURRENT_CHILDREN
   );
 
-  // Aggregate file results for progress tracking
+  // Aggregate file results and check for failures
+  let fileChunkFailures = 0;
   for (const result of fileResults) {
     if (result.status === 'fulfilled') {
       progress.convertedFiles += result.value.success;
+    } else {
+      fileChunkFailures++;
+      console.error('File chunk workflow failed:', result.reason);
     }
+  }
+
+  // If any file chunk completely failed, mark run as failed
+  if (fileChunkFailures > 0) {
+    await acts.markRunFailed(
+      runId,
+      `${fileChunkFailures} file processing chunk(s) failed unexpectedly`
+    );
+    return;
   }
 
   // === Stage 2: Generate guides using child workflows ===
@@ -127,12 +140,25 @@ export async function guideGenerationWorkflow(
     MAX_CONCURRENT_CHILDREN
   );
 
-  // Aggregate guide results for progress tracking
+  // Aggregate guide results and check for failures
+  let guideChunkFailures = 0;
   for (const result of guideResults) {
     if (result.status === 'fulfilled') {
       progress.completedGuides += result.value.success;
       progress.failedGuides += result.value.failed;
+    } else {
+      guideChunkFailures++;
+      console.error('Guide chunk workflow failed:', result.reason);
     }
+  }
+
+  // If any guide chunk completely failed, mark run as failed
+  if (guideChunkFailures > 0) {
+    await acts.markRunFailed(
+      runId,
+      `${guideChunkFailures} guide processing chunk(s) failed unexpectedly`
+    );
+    return;
   }
 
   // === Stage 3: Finalize ===

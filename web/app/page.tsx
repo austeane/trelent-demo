@@ -110,12 +110,12 @@ function ConfigureRunModal({
           {/* Documents */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Documents <span className="text-gray-400 font-normal">(1 - 10,000)</span>
+              Documents <span className="text-gray-400 font-normal">(1 - 1,000)</span>
             </label>
             <input
               type="number"
               min={1}
-              max={10000}
+              max={1000}
               value={config.fileCount}
               onChange={(e) =>
                 setConfig({ ...config, fileCount: Math.max(1, parseInt(e.target.value) || 1) })
@@ -127,12 +127,12 @@ function ConfigureRunModal({
           {/* Guides */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Guides <span className="text-gray-400 font-normal">(1 - 500)</span>
+              Guides <span className="text-gray-400 font-normal">(1 - 100)</span>
             </label>
             <input
               type="number"
               min={1}
-              max={500}
+              max={100}
               value={config.guideCount}
               onChange={(e) =>
                 setConfig({ ...config, guideCount: Math.max(1, parseInt(e.target.value) || 1) })

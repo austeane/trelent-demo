@@ -7,8 +7,12 @@ export async function GET(request: NextRequest, { params }: { params: { runId: s
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') as GuideStatus | null;
     const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '20');
+
+    // Validate and clamp pagination parameters
+    const rawPage = parseInt(searchParams.get('page') || '1');
+    const rawPageSize = parseInt(searchParams.get('pageSize') || '20');
+    const page = Math.max(1, isNaN(rawPage) ? 1 : rawPage);
+    const pageSize = Math.min(100, Math.max(1, isNaN(rawPageSize) ? 20 : rawPageSize));
 
     const where = {
       runId: params.runId,

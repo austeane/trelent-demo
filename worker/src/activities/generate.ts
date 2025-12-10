@@ -188,6 +188,40 @@ export async function processGuide(
 
   const attempt = guide.attempts + 1;
 
+  // Wrap everything in try/catch to ensure guide reaches terminal state
+  // even if activity fails after max Temporal retries
+  try {
+    return await processGuideInternal(runId, guideId, guide, attempt, isManualRetry);
+  } catch (error) {
+    // If this is a retryable error (attempt < 3), let Temporal retry
+    if (attempt < 3) {
+      throw error;
+    }
+    // Otherwise, ensure guide is in terminal state before failing
+    try {
+      await db.guide.update({
+        where: { id: guideId },
+        data: {
+          status: 'needs_attention',
+          failureReason: 'Processing failed unexpectedly. Please try again.',
+          failureDetails: { error: (error as Error).message, attempts: attempt },
+          htmlContent: generateSkeletonHTML(guide.name, guide.description),
+        },
+      });
+    } catch {
+      // Ignore DB errors in cleanup - guide may already be in terminal state
+    }
+    return { success: false };
+  }
+}
+
+async function processGuideInternal(
+  runId: string,
+  guideId: string,
+  guide: { name: string; description: string; forceFailure: boolean },
+  attempt: number,
+  isManualRetry: boolean
+): Promise<{ success: boolean }> {
   // Conditional update: only transition if in expected state
   const validFromStates: GuideStatus[] = isManualRetry
     ? ['pending', 'needs_attention', 'searching', 'generating']

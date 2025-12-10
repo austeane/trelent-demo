@@ -5,6 +5,7 @@ export {
   updateRunProgress,
   finalizeRun,
   refinalizeRun,
+  markRunFailed,
   incrementConvertedFiles,
   incrementGuideProgress,
 } from './db';
