@@ -14,10 +14,12 @@ async function run() {
     connection,
     namespace: 'default',
     taskQueue: TASK_QUEUE,
-    workflowsPath: require.resolve('./workflows/guideGeneration'),
+    // Load all workflows from index (parent + child workflows)
+    workflowsPath: require.resolve('./workflows'),
     activities,
-    maxConcurrentActivityTaskExecutions: 20,
-    maxConcurrentWorkflowTaskExecutions: 10,
+    // Increased concurrency for large-scale runs (5000+ files)
+    maxConcurrentActivityTaskExecutions: 50,
+    maxConcurrentWorkflowTaskExecutions: 20,
   });
 
   console.log(`Worker started, listening on task queue: ${TASK_QUEUE}`);

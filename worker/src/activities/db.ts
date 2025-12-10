@@ -24,6 +24,45 @@ export async function updateRunProgress(
   });
 }
 
+/**
+ * Atomically increment file conversion count.
+ * Used by child workflows to safely update progress concurrently.
+ */
+export async function incrementConvertedFiles(
+  runId: string,
+  count: number
+): Promise<void> {
+  await db.run.update({
+    where: { id: runId },
+    data: {
+      convertedFiles: {
+        increment: count,
+      },
+    },
+  });
+}
+
+/**
+ * Atomically increment guide progress counts.
+ * Used by child workflows to safely update progress concurrently.
+ */
+export async function incrementGuideProgress(
+  runId: string,
+  progress: { completed: number; failed: number }
+): Promise<void> {
+  await db.run.update({
+    where: { id: runId },
+    data: {
+      completedGuides: {
+        increment: progress.completed,
+      },
+      failedGuides: {
+        increment: progress.failed,
+      },
+    },
+  });
+}
+
 export async function finalizeRun(
   runId: string,
   stats: { completed: number; failed: number }

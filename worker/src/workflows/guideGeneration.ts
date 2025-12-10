@@ -2,9 +2,12 @@ import {
   proxyActivities,
   defineQuery,
   setHandler,
-  sleep,
+  executeChild,
+  ParentClosePolicy,
 } from '@temporalio/workflow';
 import type * as activities from '../activities';
+import type { FileChunkResult } from './fileChunkWorkflow';
+import type { GuideChunkResult } from './guideChunkWorkflow';
 
 const acts = proxyActivities<typeof activities>({
   startToCloseTimeout: '5 minutes',
@@ -17,6 +20,9 @@ const acts = proxyActivities<typeof activities>({
   },
 });
 
+// Chunk size for child workflows - keeps history under Temporal's limits
+const CHUNK_SIZE = 100;
+
 export interface Progress {
   stage: string;
   totalFiles: number;
@@ -27,6 +33,15 @@ export interface Progress {
 }
 
 export const getProgress = defineQuery<Progress>('getProgress');
+
+// Helper to chunk an array
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
 
 export async function guideGenerationWorkflow(
   runId: string,
@@ -44,51 +59,59 @@ export async function guideGenerationWorkflow(
 
   setHandler(getProgress, () => progress);
 
-  // === Stage 1: Convert files ===
+  // === Stage 1: Convert files using child workflows ===
   progress.stage = 'converting_documents';
   await acts.updateRunStage(runId, 'converting_documents');
 
-  const CONVERT_CONCURRENCY = 5;
-  for (let i = 0; i < fileIds.length; i += CONVERT_CONCURRENCY) {
-    const batch = fileIds.slice(i, i + CONVERT_CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map((id) => acts.convertFile(runId, id))
-    );
+  const fileChunks = chunkArray(fileIds, CHUNK_SIZE);
 
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value.success) {
-        progress.convertedFiles++;
-      }
+  // Execute all file chunks in parallel via child workflows
+  const fileResults = await Promise.allSettled(
+    fileChunks.map((chunk, index) =>
+      executeChild<typeof import('./fileChunkWorkflow').fileChunkWorkflow>(
+        'fileChunkWorkflow',
+        {
+          workflowId: `${runId}-file-chunk-${index}`,
+          args: [runId, chunk, index],
+          parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
+        }
+      )
+    )
+  );
+
+  // Aggregate file results for progress tracking
+  for (const result of fileResults) {
+    if (result.status === 'fulfilled') {
+      progress.convertedFiles += result.value.success;
     }
-
-    await acts.updateRunProgress(runId, {
-      convertedFiles: progress.convertedFiles,
-    });
   }
 
-  // === Stage 2: Generate guides ===
+  // === Stage 2: Generate guides using child workflows ===
   progress.stage = 'writing_guides';
   await acts.updateRunStage(runId, 'writing_guides');
 
-  const GENERATE_CONCURRENCY = 10;
-  for (let i = 0; i < guideIds.length; i += GENERATE_CONCURRENCY) {
-    const batch = guideIds.slice(i, i + GENERATE_CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map((id) => acts.processGuide(runId, id))
-    );
+  const guideChunks = chunkArray(guideIds, CHUNK_SIZE);
 
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value.success) {
-        progress.completedGuides++;
-      } else {
-        progress.failedGuides++;
-      }
+  // Execute all guide chunks in parallel via child workflows
+  const guideResults = await Promise.allSettled(
+    guideChunks.map((chunk, index) =>
+      executeChild<typeof import('./guideChunkWorkflow').guideChunkWorkflow>(
+        'guideChunkWorkflow',
+        {
+          workflowId: `${runId}-guide-chunk-${index}`,
+          args: [runId, chunk, index],
+          parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
+        }
+      )
+    )
+  );
+
+  // Aggregate guide results for progress tracking
+  for (const result of guideResults) {
+    if (result.status === 'fulfilled') {
+      progress.completedGuides += result.value.success;
+      progress.failedGuides += result.value.failed;
     }
-
-    await acts.updateRunProgress(runId, {
-      completedGuides: progress.completedGuides,
-      failedGuides: progress.failedGuides,
-    });
   }
 
   // === Stage 3: Finalize ===
