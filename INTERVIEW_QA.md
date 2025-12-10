@@ -82,26 +82,43 @@ for (let attempt = 1; attempt <= 3; attempt++) {
 return generateSkeletonGuide(searchResults);
 ```
 
-#### Idempotency (Principal-level concern)
+#### Idempotency with Lease-Based Concurrency Control
 
-Activities can retry on worker crash. Each activity guards against double-execution:
+Activities can retry on worker crash or timeout. Temporal may reschedule while the old attempt is still running. Each activity uses a lease pattern to prevent concurrent execution:
 
 ```typescript
-// Idempotency guard at start of each activity
+// 1. Terminal state short-circuit
 if (guide.status === 'completed' && guide.htmlContent) {
   return { success: true }; // Already done
 }
 
-// Conditional update: only transition if in expected state
-const updateResult = await db.guide.updateMany({
-  where: { id: guideId, status: { in: ['pending', 'searching'] } },
-  data: { status: 'searching' },
+// 2. Generate unique token for this attempt
+const token = `${workflowId}:${activityId}:${attempt}`;
+const leaseExpiry = new Date(Date.now() - 5 * 60 * 1000); // 5 min
+
+// 3. Acquire lease: only from pending OR expired in-progress
+const acquired = await db.guide.updateMany({
+  where: {
+    id: guideId,
+    OR: [
+      { status: 'pending' },
+      { status: 'searching', processingStartedAt: { lt: leaseExpiry } },
+    ],
+  },
+  data: { status: 'searching', processingToken: token, processingStartedAt: new Date() },
 });
-if (updateResult.count === 0) {
-  // Another worker already processed this
+if (acquired.count === 0) {
   return { success: currentGuide?.status === 'completed' };
 }
+
+// 4. All writes gated by token ownership
+await db.guide.updateMany({
+  where: { id: guideId, processingToken: token },
+  data: { status: 'completed', htmlContent: html, processingToken: null },
+});
 ```
+
+This prevents the "old attempt still running" race condition that simpler conditional updates miss.
 
 #### Tech stack
 
@@ -230,9 +247,10 @@ await executeChildrenThrottled(
 - Each child: ~1,000 events (100 items)
 - Total: distributed across 51 workflows, all under 10K
 
-**Idempotency guards** to handle activity retries safely:
+**Lease-based idempotency** to handle activity retries safely:
 - Check terminal state before processing
-- Conditional DB updates with WHERE clauses
+- Acquire processing token, only from pending OR expired in-progress
+- All DB writes gated by token ownership
 - Derive counts from ground truth via `groupBy`
 
 #### Richer UX at 3 months

@@ -15,7 +15,7 @@ I built a working app (not a design doc).
 ## What to do as a reviewer (2 minutes)
 
 1. Open the **Live Demo**
-2. Click **"Demo with Failures"**
+2. Click **"Configure Run"** and choose a preset (e.g., "With Failures" for 25% failure rate)
 3. Watch the run move through:
    - **Reading documents** (mock conversion)
    - **Writing guides** (mock search + mock generation)
@@ -102,10 +102,11 @@ Relevant files:
 Activities can be retried on worker crash, network failure, or timeout. Each activity implements:
 
 1. **Terminal state short-circuit**: If already completed/failed, return early
-2. **Conditional state transitions**: `updateMany(where: status in [expected states])`
-3. **"Someone else did it" fallback**: Check current state if no rows updated
+2. **Lease-based acquisition**: Generate a processing token (`workflowId:activityId:attempt`), only acquire from `pending` OR from in-progress states with expired lease (5 min)
+3. **Token-gated writes**: All DB updates include `WHERE processingToken = token`
+4. **Lease release**: Clear token on terminal state
 
-This prevents double-counting and state corruption during retries.
+This prevents concurrent execution of the same activity across multiple workers, even during timeout/retry scenarios.
 
 ---
 
@@ -180,7 +181,7 @@ curl -X POST http://localhost:3000/api/runs \
 
 - Real file upload + object storage (S3/R2) + claim-check pattern
 - Real conversion + vector search + real LLM integration
-- Auth + rate limiting
+- Authentication (rate limiting already implemented: 5 runs/min/IP)
 - Run cancellation + "retry all failed"
 - Background ZIP export (don't generate ZIP in the web request path)
 - Observability: structured logs + metrics (schedule-to-start latency, activity durations, failure rates)
