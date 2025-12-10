@@ -8,12 +8,14 @@ export async function GET(
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const search = searchParams.get('search');
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
     const where = {
       runId: params.runId,
       ...(status ? { status } : {}),
+      ...(search ? { name: { contains: search, mode: 'insensitive' as const } } : {}),
     };
 
     const [guides, total] = await Promise.all([
