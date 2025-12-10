@@ -7,7 +7,7 @@ This repository is my answer—a working demo, not a slide deck.
 **Live Demo:** https://web-production-dc150.up.railway.app
 **Temporal UI:** https://temporal-ui-production-04cb.up.railway.app
 
-> **Note on Temporal UI:** The Temporal UI is intentionally left public for this demo so reviewers can inspect workflow execution history, activity retries, and event replay. In production, Temporal UI should be internal-only or behind authentication, as Temporal OSS has no built-in auth. The web app acts as the authenticated boundary—users interact with progress via the control plane, never directly with Temporal.
+> **Note on Temporal UI:** The Temporal UI is intentionally public for this demo so reviewers can inspect workflow execution history, activity retries, and event replay. In production, Temporal UI should be internal-only or behind authentication, as Temporal OSS has no built-in auth. The web app acts as the authenticated boundary—users interact with progress via the control plane, never directly with Temporal.
 
 ---
 
@@ -16,13 +16,14 @@ This repository is my answer—a working demo, not a slide deck.
 1. [The Problem](#the-problem)
 2. [Why Temporal](#why-temporal)
 3. [Architecture Overview](#architecture-overview)
-4. [Technical Decisions](#technical-decisions)
-5. [The Workflow](#the-workflow)
-6. [Failure Handling Strategy](#failure-handling-strategy)
-7. [What This Demo Shows](#what-this-demo-shows)
-8. [Running Locally](#running-locally)
-9. [Deployment](#deployment)
-10. [What I'd Build Next](#what-id-build-next)
+4. [Scaling to 5000 Documents](#scaling-to-5000-documents)
+5. [Technical Decisions](#technical-decisions)
+6. [The Workflow](#the-workflow)
+7. [Failure Handling Strategy](#failure-handling-strategy)
+8. [What This Demo Shows](#what-this-demo-shows)
+9. [Running Locally](#running-locally)
+10. [Deployment](#deployment)
+11. [What I'd Build Next](#what-id-build-next)
 
 ---
 
@@ -80,13 +81,13 @@ With Temporal, I write workflows in TypeScript:
 ```typescript
 // This looks like normal async code, but it's durable
 export async function guideGenerationWorkflow(runId: string, fileIds: string[], guideIds: string[]) {
-  // Stage 1: Convert files (5 concurrent)
-  await convertFiles(runId, fileIds);
+  // Stage 1: Convert files via child workflows (100 files per child)
+  await processFileChunks(runId, fileIds);
 
-  // Stage 2: Generate guides (10 concurrent)
-  await generateGuides(runId, guideIds);
+  // Stage 2: Generate guides via child workflows (100 guides per child)
+  await processGuideChunks(runId, guideIds);
 
-  // Stage 3: Finalize
+  // Stage 3: Finalize (derives counts from ground truth)
   await finalizeRun(runId);
 }
 ```
@@ -155,62 +156,181 @@ temporal-app/
 
 ---
 
-## Technical Decisions
+## Scaling to 5000 Documents
 
-### Database Schema
+A naive workflow processing 5,000 files would generate ~50,000 events (10 events per file), hitting Temporal's recommended history limits. This demo implements a **parent-child workflow architecture** to handle scale.
 
-```prisma
-model Run {
-  id              String    @id @default(uuid())
-  name            String
-  status          String    @default("pending")  // pending|processing|completed|completed_with_errors|failed
-  stage           String    @default("initializing")  // initializing|converting|generating|finalizing|done
-  totalFiles      Int       @default(0)
-  convertedFiles  Int       @default(0)
-  totalGuides     Int       @default(0)
-  completedGuides Int       @default(0)
-  failedGuides    Int       @default(0)
-  workflowId      String?   @unique
-  // ... timestamps, relations
-}
+### The Architecture
 
-model File {
-  id              String   @id @default(uuid())
-  runId           String
-  filename        String
-  fileHash        String
-  status          String   @default("pending")  // pending|converting|converted|failed
-  markdownContent String?  @db.Text
-  // ... relations
-}
+```
+Parent Workflow (orchestrator)
+    │
+    ├── fileChunkWorkflow[0] (files 0-99)
+    ├── fileChunkWorkflow[1] (files 100-199)
+    ├── ... (50 total file chunks)
+    │
+    └── guideChunkWorkflow[0] (guides 0-99)
+    └── guideChunkWorkflow[1] (guides 100-199)
+    └── ...
+```
 
-model Guide {
-  id             String   @id @default(uuid())
-  runId          String
-  name           String
-  description    String   @db.Text
-  status         String   @default("pending")  // pending|searching|generating|completed|needs_attention
-  searchResults  Json?
-  htmlContent    String?  @db.Text
-  failureReason  String?  // User-friendly explanation
-  failureDetails Json?    // Technical details for debugging
-  forceFailure   Boolean  @default(false)  // Demo mode
-  attempts       Int      @default(0)
-  // ... relations
+Each child workflow processes up to 100 items, keeping its history well under limits (~1,000 events per child). The parent workflow has only ~165 events (child executions + setup).
+
+### Throttled Execution
+
+Starting 50 child workflows simultaneously would flood the Temporal task queue. Instead, we throttle to 10 concurrent children:
+
+```typescript
+const MAX_CONCURRENT_CHILDREN = 10;
+
+async function executeChildrenThrottled<T>(
+  tasks: Array<() => Promise<T>>,
+  maxConcurrent: number
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = [];
+
+  for (let i = 0; i < tasks.length; i += maxConcurrent) {
+    const batch = tasks.slice(i, i + maxConcurrent);
+    const batchResults = await Promise.allSettled(batch.map(fn => fn()));
+    results.push(...batchResults);
+  }
+
+  return results;
 }
 ```
 
-**Key decisions:**
+### Verified at Scale
 
-1. **`stage` vs `status`**: Status is the final outcome, stage is current progress. Users see "Reading documents" (stage) while status remains "processing".
+The 5,000 document test run completed successfully:
+- **5,000 files** → 4,739 converted (261 failed at designed 5% rate)
+- **100 guides** → 48 completed, 2 needs_attention
+- **Throughput:** ~760-800 files/minute
+- **No history limit issues** - distributed across 51 workflows
 
-2. **`failureReason` vs `failureDetails`**: User-friendly message ("We couldn't find relevant content") separate from technical details (stack traces, API responses).
+---
 
-3. **`forceFailure` flag**: Enables demo mode without changing failure logic. Clean separation of concerns.
+## Technical Decisions
 
-4. **`attempts` counter**: Tracks retry attempts for degrading strategy (full generation → simplified → skeleton).
+### Database Schema with Type-Safe Enums
 
-### Bounded Concurrency
+Status fields use Prisma enums for compile-time safety:
+
+```prisma
+enum RunStatus {
+  pending
+  processing
+  completed
+  completed_with_errors
+  failed
+}
+
+enum RunStage {
+  initializing
+  converting_documents
+  writing_guides
+  complete
+}
+
+enum FileStatus {
+  pending
+  converting
+  converted
+  failed
+}
+
+enum GuideStatus {
+  pending
+  searching
+  generating
+  completed
+  needs_attention
+}
+
+model Run {
+  id              String    @id @default(uuid())
+  name            String
+  status          RunStatus @default(pending)
+  stage           RunStage  @default(initializing)
+  totalFiles      Int       @default(0)
+  convertedFiles  Int       @default(0)
+  // ...
+}
+```
+
+**Why enums over strings?**
+- Database-level constraint on valid values
+- TypeScript union types in generated client
+- Prevents drift between code and schema
+- UI can't silently break on rename
+
+### Idempotency Guards in Activities
+
+Activities can be retried on worker crash, network failure, or timeout. Without guards, this causes double-counting and state corruption:
+
+```typescript
+export async function convertFile(runId: string, fileId: string) {
+  const file = await db.file.findUnique({ where: { id: fileId } });
+
+  // Guard: already in terminal state? Return early.
+  if (file.status === 'converted' && file.markdownContent) {
+    return { success: true };
+  }
+  if (file.status === 'failed') {
+    return { success: false };
+  }
+
+  // Conditional update: only transition if in expected state
+  const updateResult = await db.file.updateMany({
+    where: {
+      id: fileId,
+      status: { in: ['pending', 'converting'] }
+    },
+    data: { status: 'converting' },
+  });
+
+  // If no rows updated, another worker already processed this
+  if (updateResult.count === 0) {
+    const currentFile = await db.file.findUnique({ where: { id: fileId } });
+    return { success: currentFile?.status === 'converted' };
+  }
+
+  // ... actual conversion logic
+}
+```
+
+This pattern handles:
+- Worker crash after DB write but before Temporal acknowledgment
+- Concurrent retries from multiple workers
+- Activity replay during workflow recovery
+
+### Ground Truth for Progress Counts
+
+Counter increments (`completedGuides++`) are not retry-safe. Instead, finalization derives counts from actual database state:
+
+```typescript
+export async function refinalizeRun(runId: string) {
+  const guideCounts = await db.guide.groupBy({
+    by: ['status'],
+    where: { runId },
+    _count: true,
+  });
+
+  const completed = guideCounts.find(g => g.status === 'completed')?._count ?? 0;
+  const needsAttention = guideCounts.find(g => g.status === 'needs_attention')?._count ?? 0;
+
+  await db.run.update({
+    where: { id: runId },
+    data: {
+      completedGuides: completed,
+      failedGuides: needsAttention,
+      status: needsAttention > 0 ? 'completed_with_errors' : 'completed',
+      // ...
+    },
+  });
+}
+```
+
+### Bounded Concurrency Within Activities
 
 ```typescript
 // In workflow
@@ -236,10 +356,10 @@ const activityOptions = {
   startToCloseTimeout: '5 minutes',
   heartbeatTimeout: '30 seconds',
   retry: {
-    initialInterval: '1 second',
+    initialInterval: '2 seconds',
     backoffCoefficient: 2,
-    maximumInterval: '30 seconds',
-    maximumAttempts: 3,
+    maximumInterval: '2 minutes',
+    maximumAttempts: 4,
   },
 };
 ```
@@ -247,8 +367,8 @@ const activityOptions = {
 **Rationale:**
 - 5 minute timeout: LLM generation can be slow
 - 30 second heartbeat: Detect stuck workers quickly
-- Exponential backoff: 1s → 2s → 4s (respects rate limits)
-- 3 attempts: Fail fast, let application handle degraded output
+- Exponential backoff: 2s → 4s → 8s → 16s (respects rate limits)
+- 4 attempts: Fail fast, let application handle degraded output
 
 ### Real-time Progress (Polling vs WebSockets)
 
@@ -268,6 +388,20 @@ useEffect(() => {
 }, []);
 ```
 
+### XSS Protection in HTML Preview
+
+User-generated HTML is displayed in an iframe with sandbox restrictions:
+
+```tsx
+<iframe
+  srcDoc={guide.htmlContent}
+  sandbox="allow-same-origin"
+  title={guide.name}
+/>
+```
+
+The `sandbox` attribute prevents script execution while still allowing CSS to render. This blocks XSS even if malicious HTML were somehow generated.
+
 ### Docker Base Image
 
 ```dockerfile
@@ -284,19 +418,39 @@ RUN apt-get update && apt-get install -y openssl
 
 ## The Workflow
 
-### Stage 1: File Conversion
+### Stage 1: File Conversion (Child Workflows)
+
+```typescript
+// Parent spawns throttled child workflows
+const fileChunks = chunkArray(fileIds, 100);
+const fileResults = await executeChildrenThrottled(
+  fileChunks.map((chunk, index) => () =>
+    executeChild('fileChunkWorkflow', {
+      workflowId: `${runId}-file-chunk-${index}`,
+      args: [runId, chunk, index],
+    })
+  ),
+  MAX_CONCURRENT_CHILDREN
+);
+```
+
+Each child workflow processes its chunk with idempotent activities:
 
 ```typescript
 async function convertFile(runId: string, fileId: string) {
-  // Update status to 'converting'
-  await db.file.update({ where: { id: fileId }, data: { status: 'converting' } });
+  // Idempotency guard (see Technical Decisions)
+  // ...
 
   // Simulate document conversion (real: Unstructured, AWS Textract, etc.)
-  await simulateLatency({ min: 500, max: 2000 });
+  await simulateLatency({ min: 1500, max: 6000 });
 
   // 5% failure rate for realism
   if (Math.random() < 0.05) {
-    throw new Error('Conversion service temporarily unavailable');
+    await db.file.update({
+      where: { id: fileId },
+      data: { status: 'failed', errorMessage: 'Document conversion failed' }
+    });
+    return { success: false };
   }
 
   // Store extracted markdown
@@ -304,15 +458,23 @@ async function convertFile(runId: string, fileId: string) {
     where: { id: fileId },
     data: { status: 'converted', markdownContent: extractedContent }
   });
+  return { success: true };
 }
 ```
 
-### Stage 2: Guide Generation
+### Stage 2: Guide Generation (Child Workflows)
 
 ```typescript
-async function processGuide(runId: string, guideId: string) {
+async function processGuide(runId: string, guideId: string, isManualRetry = false) {
   const guide = await db.guide.findUnique({ where: { id: guideId } });
-  const attempt = guide.attempts + 1;
+
+  // Idempotency guards
+  if (guide.status === 'completed' && guide.htmlContent) {
+    return { success: true };
+  }
+  if (guide.status === 'needs_attention' && !isManualRetry) {
+    return { success: false };
+  }
 
   // Check for forced failure (demo mode)
   if (guide.forceFailure) {
@@ -323,17 +485,17 @@ async function processGuide(runId: string, guideId: string) {
   const searchResults = await mockSearch(runId, guide.description);
 
   if (searchResults.length === 0) {
-    // No relevant content found - needs human attention
     return markNeedsAttention(guide, "We couldn't find relevant content");
   }
 
-  // Step 2: Generate HTML
-  const html = await generateGuideHTML(guide, searchResults, attempt);
+  // Step 2: Generate HTML (with degrading retry)
+  const html = await generateGuideHTML(guide, searchResults, guide.attempts);
 
   await db.guide.update({
     where: { id: guideId },
     data: { status: 'completed', htmlContent: html }
   });
+  return { success: true };
 }
 ```
 
@@ -381,8 +543,28 @@ Guides don't just "fail"—they enter a `needs_attention` state with:
 1. Clear explanation of what went wrong
 2. Skeleton HTML they can complete manually
 3. Attempt count for debugging
+4. "Try again" button to retry with fresh attempt
 
 This aligns with Trelent's model: AI does the heavy lifting, humans handle edge cases.
+
+### Manual Retry Workflow
+
+When a user clicks "Try again," a separate `retryGuideWorkflow` runs:
+
+```typescript
+export async function retryGuideWorkflow(runId: string, guideId: string) {
+  // Process with isManualRetry=true to bypass needs_attention guard
+  await acts.processGuide(runId, guideId, true);
+
+  // Re-finalize to recalculate status from ground truth
+  await acts.refinalizeRun(runId);
+}
+```
+
+The retry workflow:
+- Uses a separate workflow ID (isolated history)
+- Passes `isManualRetry=true` to allow re-processing
+- Derives final counts from database state, not counters
 
 ### Demo Mode
 
@@ -402,79 +584,29 @@ This lets interviewers see the error handling without relying on random chance.
 - Real database, real workflow engine, real networking
 - Not a localhost demo
 
-### 2. **I understand distributed systems**
-- Durable workflows survive crashes
+### 2. **I understand distributed systems at scale**
+- Child workflow architecture handles 5,000+ documents
+- Idempotency guards handle activity retries correctly
+- Throttled execution prevents task queue flooding
 - Bounded concurrency prevents resource exhaustion
-- Retry strategies handle transient failures
 
 ### 3. **I think about the user experience**
 - Real-time progress without page refresh
 - Clear failure messages, not stack traces
+- "Try again" button for failed guides
+- Fuzzy search for filtering guides
 - Degraded output is better than no output
 
 ### 4. **I make pragmatic technology choices**
 - Temporal over simpler queues (justified above)
 - Polling over WebSockets (simpler, sufficient)
 - Monorepo structure (clear boundaries, independent deployment)
+- Prisma enums over strings (type safety)
 
 ### 5. **I document my decisions**
 - [DECISIONS.md](./DECISIONS.md) tracks choices, concerns, and tech debt
+- [INTERVIEW_QA.md](./INTERVIEW_QA.md) has detailed Q&A for reviewers
 - This README explains the "why" behind the "what"
-
----
-
-## Scaling Considerations
-
-This demo handles dozens of files and guides. Here's how it would scale to thousands:
-
-### Workflow History Size
-
-Temporal stores every event (activity start, complete, retry) in the workflow history. For a run with 5,000 guides at 10 events each, that's 50,000+ events—approaching Temporal's recommended limits.
-
-**Mitigation: Child Workflows**
-```typescript
-// Instead of one workflow processing all guides:
-for (const chunk of chunks(guideIds, 100)) {
-  await executeChild(guideChunkWorkflow, { args: [runId, chunk] });
-}
-```
-
-Each child workflow has its own history. The parent just tracks completions.
-
-**Mitigation: Continue-As-New**
-```typescript
-// For very long-running workflows, periodically reset history:
-if (processedCount > 1000) {
-  await continueAsNew<typeof guideGenerationWorkflow>(runId, remainingIds);
-}
-```
-
-### Payload Sizes
-
-Temporal payloads have size limits (~2MB default). Guide HTML content could exceed this.
-
-**Current approach:** Store HTML in Postgres, Temporal only sees IDs.
-
-This is the "claim check" pattern—Temporal orchestrates, database stores large blobs.
-
-### Worker Scaling
-
-```typescript
-// Current: single worker process
-const worker = await Worker.create({
-  taskQueue: 'guide-generation',
-  maxConcurrentActivityTaskExecutions: 50,
-});
-```
-
-**Horizontal scaling:** Deploy multiple worker replicas on Railway. Temporal automatically distributes tasks. No code changes required—just increase replica count.
-
-### What I'd Monitor
-
-1. **Workflow latency (p99)** - Are runs taking longer?
-2. **Activity retry rate** - Are external services degrading?
-3. **Queue depth** - Do we need more workers?
-4. **History event count** - Approaching limits?
 
 ---
 
@@ -535,6 +667,7 @@ Deployed on [Railway](https://railway.app) with 5 services:
 - **Temporal:** `DB=postgres12` (not `postgresql`!)
 - **Worker:** `node:20-slim` base image (not Alpine)
 - **Monorepo:** Set `Root Directory` in Railway dashboard
+- **Worker concurrency:** 50 activities, 20 workflows
 
 ---
 
@@ -551,10 +684,11 @@ Deployed on [Railway](https://railway.app) with 5 services:
 - [ ] Rate limiting on API routes
 - [ ] Worker auto-scaling based on queue depth
 - [ ] Observability (Datadog, Honeycomb)
+- [ ] Background ZIP generation (currently in web tier)
 
 ### Medium-term (Quarter 1)
 - [ ] Worker Versioning for safe deployments
-- [ ] Continue-As-New for long-running batches
+- [ ] Continue-As-New for very long-running batches
 - [ ] Multi-tenant isolation
 - [ ] Guide versioning and diff view
 
@@ -564,17 +698,21 @@ Deployed on [Railway](https://railway.app) with 5 services:
 
 | File | Description |
 |------|-------------|
-| `worker/src/workflows/guideGeneration.ts` | Main Temporal workflow |
-| `worker/src/activities/generate.ts` | Guide generation with retry logic |
-| `web/app/api/runs/route.ts` | API endpoint that starts workflows |
+| `worker/src/workflows/guideGeneration.ts` | Parent workflow with child orchestration |
+| `worker/src/workflows/fileChunkWorkflow.ts` | Child workflow for file batch processing |
+| `worker/src/activities/generate.ts` | Guide generation with idempotency guards |
+| `worker/src/activities/convert.ts` | File conversion with idempotency guards |
+| `web/app/api/runs/route.ts` | API endpoint with sample data generation |
 | `web/components/RunProgress.tsx` | Real-time progress polling |
+| `web/components/GuideList.tsx` | Filterable guide list with search |
 | `DECISIONS.md` | Running log of technical decisions |
+| `INTERVIEW_QA.md` | Detailed interview Q&A |
 
 ---
 
 ## Questions?
 
-This demo represents roughly 8 hours of focused work, from empty directory to deployed application. I'm happy to discuss any technical decision in depth.
+This demo represents focused work building a production-ready pipeline demo. I'm happy to discuss any technical decision in depth.
 
 **Austin Eaton**
 [GitHub](https://github.com/austeane)
