@@ -1,0 +1,15 @@
+{
+  "name": "trelent-demo",
+  "private": true,
+  "workspaces": ["web", "worker"],
+  "scripts": {
+    "dev": "docker-compose up -d && npm run dev:services",
+    "dev:services": "concurrently \"npm run dev -w web\" \"npm run dev -w worker\"",
+    "build": "npm run build -w web && npm run build -w worker",
+    "db:migrate": "npm run db:migrate -w web",
+    "db:generate": "npm run db:generate -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

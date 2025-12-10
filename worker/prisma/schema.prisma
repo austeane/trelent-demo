@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Run {
+  id              String    @id @default(uuid())
+  name            String
+  status          String    @default("pending")
+  stage           String    @default("initializing")
+  totalFiles      Int       @default(0)
+  convertedFiles  Int       @default(0)
+  totalGuides     Int       @default(0)
+  completedGuides Int       @default(0)
+  failedGuides    Int       @default(0)
+  workflowId      String?   @unique
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  files           File[]
+  guides          Guide[]
+
+  @@map("runs")
+}
+
+model File {
+  id              String   @id @default(uuid())
+  runId           String
+  run             Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  filename        String
+  fileHash        String
+  status          String   @default("pending")
+  markdownContent String?  @db.Text
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([runId, fileHash])
+  @@index([runId, status])
+  @@map("files")
+}
+
+model Guide {
+  id             String   @id @default(uuid())
+  runId          String
+  run            Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name           String
+  description    String   @db.Text
+  status         String   @default("pending")
+  searchResults  Json?
+  htmlContent    String?  @db.Text
+  failureReason  String?
+  failureDetails Json?
+  forceFailure   Boolean  @default(false)
+  attempts       Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([runId, status])
+  @@map("guides")
+}

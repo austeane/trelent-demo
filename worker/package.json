@@ -1,0 +1,22 @@
+{
+  "name": "worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "ts-node src/worker.ts",
+    "build": "tsc",
+    "start": "node dist/worker.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@temporalio/activity": "^1.11.3",
+    "@temporalio/worker": "^1.11.3",
+    "@temporalio/workflow": "^1.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
