@@ -157,19 +157,44 @@ function generateSkeletonHTML(guideName: string, description: string): string {
 
 export async function processGuide(
   runId: string,
-  guideId: string
+  guideId: string,
+  isManualRetry: boolean = false
 ): Promise<{ success: boolean }> {
   const guide = await db.guide.findUnique({ where: { id: guideId } });
   if (!guide) {
     throw new Error(`Guide not found: ${guideId}`);
   }
 
+  // Idempotency guard: if already in terminal state, return early
+  // This handles retries after worker crash post-DB-write
+  if (guide.status === 'completed' && guide.htmlContent) {
+    return { success: true };
+  }
+  // Only skip needs_attention if this is NOT a manual retry
+  if (guide.status === 'needs_attention' && !isManualRetry) {
+    return { success: false };
+  }
+
   const attempt = guide.attempts + 1;
 
-  await db.guide.update({
-    where: { id: guideId },
+  // Conditional update: only transition if in expected state
+  const validFromStates = isManualRetry
+    ? ['pending', 'needs_attention', 'searching', 'generating']
+    : ['pending', 'searching', 'generating'];
+
+  const updateResult = await db.guide.updateMany({
+    where: {
+      id: guideId,
+      status: { in: validFromStates }
+    },
     data: { status: 'searching', attempts: attempt },
   });
+
+  // If no rows updated, another worker already processed this
+  if (updateResult.count === 0) {
+    const currentGuide = await db.guide.findUnique({ where: { id: guideId } });
+    return { success: currentGuide?.status === 'completed' };
+  }
 
   // Check if this guide is marked for forced failure (demo mode)
   if (guide.forceFailure) {

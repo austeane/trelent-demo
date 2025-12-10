@@ -7,11 +7,45 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Run status - overall state of the run
+enum RunStatus {
+  pending
+  processing
+  completed
+  completed_with_errors
+  failed
+}
+
+// Run stage - current processing stage
+enum RunStage {
+  initializing
+  converting_documents
+  writing_guides
+  complete
+}
+
+// File status - state of individual file conversion
+enum FileStatus {
+  pending
+  converting
+  converted
+  failed
+}
+
+// Guide status - state of individual guide generation
+enum GuideStatus {
+  pending
+  searching
+  generating
+  completed
+  needs_attention
+}
+
 model Run {
   id              String    @id @default(uuid())
   name            String
-  status          String    @default("pending")
-  stage           String    @default("initializing")
+  status          RunStatus @default(pending)
+  stage           RunStage  @default(initializing)
   totalFiles      Int       @default(0)
   convertedFiles  Int       @default(0)
   totalGuides     Int       @default(0)
@@ -29,16 +63,16 @@ model Run {
 }
 
 model File {
-  id              String   @id @default(uuid())
+  id              String     @id @default(uuid())
   runId           String
-  run             Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  run             Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
   filename        String
   fileHash        String
-  status          String   @default("pending")
-  markdownContent String?  @db.Text
+  status          FileStatus @default(pending)
+  markdownContent String?    @db.Text
   errorMessage    String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   @@unique([runId, fileHash])
   @@index([runId, status])
@@ -46,20 +80,20 @@ model File {
 }
 
 model Guide {
-  id             String   @id @default(uuid())
+  id             String      @id @default(uuid())
   runId          String
-  run            Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  run            Run         @relation(fields: [runId], references: [id], onDelete: Cascade)
   name           String
-  description    String   @db.Text
-  status         String   @default("pending")
+  description    String      @db.Text
+  status         GuideStatus @default(pending)
   searchResults  Json?
-  htmlContent    String?  @db.Text
+  htmlContent    String?     @db.Text
   failureReason  String?
   failureDetails Json?
-  forceFailure   Boolean  @default(false)
-  attempts       Int      @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  forceFailure   Boolean     @default(false)
+  attempts       Int         @default(0)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   @@index([runId, status])
   @@map("guides")

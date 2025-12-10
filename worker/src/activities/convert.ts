@@ -62,10 +62,30 @@ export async function convertFile(
     throw new Error(`File not found: ${fileId}`);
   }
 
-  await db.file.update({
-    where: { id: fileId },
+  // Idempotency guard: if already in terminal state, return early
+  // This handles retries after worker crash post-DB-write
+  if (file.status === 'converted' && file.markdownContent) {
+    return { success: true };
+  }
+  if (file.status === 'failed') {
+    return { success: false };
+  }
+
+  // Conditional update: only transition if still pending/converting
+  // This prevents race conditions with concurrent retries
+  const updateResult = await db.file.updateMany({
+    where: {
+      id: fileId,
+      status: { in: ['pending', 'converting'] }
+    },
     data: { status: 'converting' },
   });
+
+  // If no rows updated, another worker already processed this
+  if (updateResult.count === 0) {
+    const currentFile = await db.file.findUnique({ where: { id: fileId } });
+    return { success: currentFile?.status === 'converted' };
+  }
 
   await simulateLatency();
 

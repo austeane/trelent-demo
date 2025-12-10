@@ -23,6 +23,9 @@ const acts = proxyActivities<typeof activities>({
 // Chunk size for child workflows - keeps history under Temporal's limits
 const CHUNK_SIZE = 100;
 
+// Max concurrent child workflows to avoid flooding the task queue
+const MAX_CONCURRENT_CHILDREN = 10;
+
 export interface Progress {
   stage: string;
   totalFiles: number;
@@ -41,6 +44,22 @@ function chunkArray<T>(array: T[], size: number): T[][] {
     chunks.push(array.slice(i, i + size));
   }
   return chunks;
+}
+
+// Throttled execution of child workflows to prevent task queue flooding
+async function executeChildrenThrottled<T>(
+  tasks: Array<() => Promise<T>>,
+  maxConcurrent: number
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = [];
+
+  for (let i = 0; i < tasks.length; i += maxConcurrent) {
+    const batch = tasks.slice(i, i + maxConcurrent);
+    const batchResults = await Promise.allSettled(batch.map(fn => fn()));
+    results.push(...batchResults);
+  }
+
+  return results;
 }
 
 export async function guideGenerationWorkflow(
@@ -65,9 +84,10 @@ export async function guideGenerationWorkflow(
 
   const fileChunks = chunkArray(fileIds, CHUNK_SIZE);
 
-  // Execute all file chunks in parallel via child workflows
-  const fileResults = await Promise.allSettled(
-    fileChunks.map((chunk, index) =>
+  // Execute file chunks with throttling to avoid flooding the task queue
+  // Process MAX_CONCURRENT_CHILDREN chunks at a time
+  const fileResults = await executeChildrenThrottled(
+    fileChunks.map((chunk, index) => () =>
       executeChild<typeof import('./fileChunkWorkflow').fileChunkWorkflow>(
         'fileChunkWorkflow',
         {
@@ -76,7 +96,8 @@ export async function guideGenerationWorkflow(
           parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
         }
       )
-    )
+    ),
+    MAX_CONCURRENT_CHILDREN
   );
 
   // Aggregate file results for progress tracking
@@ -92,9 +113,9 @@ export async function guideGenerationWorkflow(
 
   const guideChunks = chunkArray(guideIds, CHUNK_SIZE);
 
-  // Execute all guide chunks in parallel via child workflows
-  const guideResults = await Promise.allSettled(
-    guideChunks.map((chunk, index) =>
+  // Execute guide chunks with throttling to avoid flooding the task queue
+  const guideResults = await executeChildrenThrottled(
+    guideChunks.map((chunk, index) => () =>
       executeChild<typeof import('./guideChunkWorkflow').guideChunkWorkflow>(
         'guideChunkWorkflow',
         {
@@ -103,7 +124,8 @@ export async function guideGenerationWorkflow(
           parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
         }
       )
-    )
+    ),
+    MAX_CONCURRENT_CHILDREN
   );
 
   // Aggregate guide results for progress tracking
@@ -130,21 +152,11 @@ export async function retryGuideWorkflow(
   runId: string,
   guideId: string
 ): Promise<void> {
-  // Process the single guide
-  const result = await acts.processGuide(runId, guideId);
+  // Process the single guide with isManualRetry=true
+  // This bypasses the idempotency guard for needs_attention status
+  await acts.processGuide(runId, guideId, true);
 
-  // Update run based on result
-  if (result.success) {
-    await acts.updateRunProgress(runId, {
-      completedGuides: 1, // Increment by 1
-    });
-  } else {
-    await acts.updateRunProgress(runId, {
-      failedGuides: 1, // Increment by 1
-    });
-  }
-
-  // Re-finalize the run to update status
-  // Get current counts from DB via activity
+  // Re-finalize the run to recalculate status from ground truth
+  // This derives counts from actual guide statuses, not counters
   await acts.refinalizeRun(runId);
 }

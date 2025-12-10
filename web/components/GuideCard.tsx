@@ -93,6 +93,8 @@ export function GuideCard({
             srcDoc={guide.htmlContent}
             className="w-full h-96 bg-white"
             title={guide.name}
+            // Sandbox to prevent XSS - only allow styles, no scripts or forms
+            sandbox="allow-same-origin"
           />
         </div>
       )}
