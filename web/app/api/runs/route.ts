@@ -162,12 +162,14 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const name = body.name || `Guide Generation Run - ${new Date().toLocaleDateString()}`;
-    const withFailures = body.withFailures === true;
 
     // Configurable scale - defaults to demo size (8 files, 12 guides)
     // Can scale up to 10K files, 500 guides
     const fileCount = Math.min(Math.max(body.fileCount || 8, 1), 10000);
     const guideCount = Math.min(Math.max(body.guideCount || 12, 1), 500);
+
+    // Failure rate as percentage (0-100), defaults to 0
+    const failureRate = Math.min(Math.max(body.failureRate || 0, 0), 100);
 
     const sampleFiles = generateSampleFiles(fileCount);
     const sampleGuides = generateSampleGuides(guideCount);
@@ -228,9 +230,9 @@ export async function POST(request: NextRequest) {
       })
       .then((rows) => rows.map((r) => r.id));
 
-    // If withFailures, randomly mark 2-4 guides to force failure
-    if (withFailures) {
-      const numFailures = 2 + Math.floor(Math.random() * 3); // 2-4 failures
+    // Mark a percentage of guides to force failure based on failureRate
+    const numFailures = Math.round(guideIds.length * (failureRate / 100));
+    if (numFailures > 0) {
       const shuffled = [...guideIds].sort(() => Math.random() - 0.5);
       const failureIds = shuffled.slice(0, numFailures);
 
