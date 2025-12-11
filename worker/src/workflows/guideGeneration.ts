@@ -16,7 +16,9 @@ const acts = proxyActivities<typeof activities>({
     initialInterval: '2 seconds',
     backoffCoefficient: 2,
     maximumInterval: '2 minutes',
-    maximumAttempts: 4,
+    // High attempt cap so LeaseHeldError retries can outlive lease expiry windows.
+    // Non-lease failures are still bounded by activity-side attempt logic.
+    maximumAttempts: 100,
   },
 });
 

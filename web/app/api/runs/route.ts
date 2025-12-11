@@ -41,6 +41,21 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
 // Lower caps for public demo to prevent DoS
 const MAX_FILES_PUBLIC = 1000;
 const MAX_GUIDES_PUBLIC = 100;
+// Higher caps for private / local demos to match prompt scale
+const MAX_FILES_PRIVATE = 5000;
+const MAX_GUIDES_PRIVATE = 5000;
+
+function getDemoCaps(request: NextRequest): { maxFiles: number; maxGuides: number } {
+  const privateModeEnv = process.env.DEMO_PRIVATE_MODE === 'true';
+  const privateKey = process.env.DEMO_PRIVATE_KEY;
+  const headerKey = request.headers.get('x-demo-private-key');
+  const privateModeHeader = Boolean(privateKey && headerKey && headerKey === privateKey);
+
+  if (privateModeEnv || privateModeHeader) {
+    return { maxFiles: MAX_FILES_PRIVATE, maxGuides: MAX_GUIDES_PRIVATE };
+  }
+  return { maxFiles: MAX_FILES_PUBLIC, maxGuides: MAX_GUIDES_PUBLIC };
+}
 
 // Document categories for realistic variety
 const DOC_CATEGORIES = [
@@ -213,9 +228,10 @@ export async function POST(request: NextRequest) {
     const name = body.name || `Guide Generation Run - ${new Date().toLocaleDateString()}`;
 
     // Configurable scale - defaults to demo size (8 files, 12 guides)
-    // Lower caps for public demo to prevent DoS
-    const fileCount = Math.min(Math.max(body.fileCount || 8, 1), MAX_FILES_PUBLIC);
-    const guideCount = Math.min(Math.max(body.guideCount || 12, 1), MAX_GUIDES_PUBLIC);
+    // Lower caps for public demo to prevent DoS; private mode allows prompt-scale runs.
+    const { maxFiles, maxGuides } = getDemoCaps(request);
+    const fileCount = Math.min(Math.max(body.fileCount || 8, 1), maxFiles);
+    const guideCount = Math.min(Math.max(body.guideCount || 12, 1), maxGuides);
 
     // Failure rate as percentage (0-100), defaults to 0
     const failureRate = Math.min(Math.max(body.failureRate || 0, 0), 100);

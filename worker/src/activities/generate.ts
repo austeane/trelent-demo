@@ -17,6 +17,7 @@ const GENERATION_CONFIG = {
 
 // Lease expiry threshold - allow takeover after this duration
 const LEASE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const LEASE_REFRESH_INTERVAL_MS = 30 * 1000; // Refresh lease roughly every 30s
 
 // Custom error for lease conflicts - always retryable regardless of attempt count
 class LeaseHeldError extends Error {
@@ -49,22 +50,36 @@ interface SearchResult {
   relevance: number;
 }
 
+function hasNonEmptySearchResults(value: unknown): value is SearchResult[] {
+  return Array.isArray(value) && value.length > 0;
+}
+
 async function simulateLatency(
   config: { minLatencyMs: number; maxLatencyMs: number },
-  label: string
+  label: string,
+  refreshLease?: () => Promise<void>
 ): Promise<void> {
   const duration =
     config.minLatencyMs + Math.random() * (config.maxLatencyMs - config.minLatencyMs);
 
   const chunks = Math.ceil(duration / 1000);
+  let lastRefresh = Date.now();
   for (let i = 0; i < chunks; i++) {
     Context.current().heartbeat(`${label} ${i + 1}/${chunks}`);
     await new Promise((r) => setTimeout(r, 1000));
+    if (refreshLease && Date.now() - lastRefresh >= LEASE_REFRESH_INTERVAL_MS) {
+      await refreshLease();
+      lastRefresh = Date.now();
+    }
   }
 }
 
-async function mockSearch(runId: string, _query: string): Promise<SearchResult[]> {
-  await simulateLatency(SEARCH_CONFIG, 'Searching');
+async function mockSearch(
+  runId: string,
+  _query: string,
+  refreshLease?: () => Promise<void>
+): Promise<SearchResult[]> {
+  await simulateLatency(SEARCH_CONFIG, 'Searching', refreshLease);
 
   if (Math.random() < SEARCH_CONFIG.failureRate) {
     throw new Error('Search service temporarily unavailable');
@@ -230,15 +245,34 @@ export async function processGuide(
     }
     // Otherwise, ensure guide is in terminal state before failing
     try {
-      await db.guide.update({
-        where: { id: guideId },
-        data: {
-          status: 'needs_attention',
-          failureReason: 'Processing failed unexpectedly. Please try again.',
-          failureDetails: { error: (error as Error).message, attempts: attempt },
-          htmlContent: generateSkeletonHTML(guide.name, guide.description),
-        },
+      const token = generateProcessingToken();
+      const data = {
+        status: 'needs_attention' as GuideStatus,
+        failureReason: 'Processing failed unexpectedly. Please try again.',
+        failureDetails: { error: (error as Error).message, attempts: attempt },
+        htmlContent: generateSkeletonHTML(guide.name, guide.description),
+        processingToken: null,
+        processingStartedAt: null,
+        processingHeartbeatAt: null,
+      };
+
+      const cleaned = await db.guide.updateMany({
+        where: { id: guideId, processingToken: token },
+        data,
       });
+
+      // If we no longer hold the lease, only write if the guide is in an in-progress
+      // state without an active lease. Avoid clobbering terminal needs_attention.
+      if (cleaned.count === 0) {
+        await db.guide.updateMany({
+          where: {
+            id: guideId,
+            processingToken: null,
+            status: { in: ['pending', 'searching', 'generating'] as GuideStatus[] },
+          },
+          data,
+        });
+      }
     } catch {
       // Ignore DB errors in cleanup - guide may already be in terminal state
     }
@@ -249,7 +283,12 @@ export async function processGuide(
 async function processGuideInternal(
   runId: string,
   guideId: string,
-  guide: { name: string; description: string; forceFailure: boolean },
+  guide: {
+    name: string;
+    description: string;
+    forceFailure: boolean;
+    searchResults?: unknown | null;
+  },
   attempt: number,
   isManualRetry: boolean
 ): Promise<{ success: boolean }> {
@@ -266,14 +305,20 @@ async function processGuideInternal(
         { status: 'needs_attention' as GuideStatus },
         {
           status: { in: ['searching', 'generating'] as GuideStatus[] },
-          processingStartedAt: { lt: leaseExpiry },
+          OR: [
+            { processingHeartbeatAt: { lt: leaseExpiry } },
+            { processingHeartbeatAt: null, processingStartedAt: { lt: leaseExpiry } },
+          ],
         },
       ]
     : [
         { status: 'pending' as GuideStatus },
         {
           status: { in: ['searching', 'generating'] as GuideStatus[] },
-          processingStartedAt: { lt: leaseExpiry },
+          OR: [
+            { processingHeartbeatAt: { lt: leaseExpiry } },
+            { processingHeartbeatAt: null, processingStartedAt: { lt: leaseExpiry } },
+          ],
         },
       ];
 
@@ -287,6 +332,7 @@ async function processGuideInternal(
       attempts: attempt,
       processingToken: token,
       processingStartedAt: now,
+      processingHeartbeatAt: now,
     },
   });
 
@@ -309,10 +355,20 @@ async function processGuideInternal(
     );
   }
 
+  const refreshLease = async () => {
+    const refreshed = await db.guide.updateMany({
+      where: { id: guideId, processingToken: token },
+      data: { processingHeartbeatAt: new Date() },
+    });
+    if (refreshed.count === 0) {
+      throw new LeaseHeldError(`Guide ${guideId} lease lost during processing`);
+    }
+  };
+
   // Check if this guide is marked for forced failure (demo mode)
   if (guide.forceFailure) {
     // Simulate some work before failing
-    await simulateLatency({ minLatencyMs: 1000, maxLatencyMs: 2000 }, 'Searching');
+    await simulateLatency({ minLatencyMs: 1000, maxLatencyMs: 2000 }, 'Searching', refreshLease);
 
     const failureReasons = [
       "We couldn't find relevant content in your documents for this guide.",
@@ -330,6 +386,8 @@ async function processGuideInternal(
         searchResults: [],
         htmlContent: generateSkeletonHTML(guide.name, guide.description),
         processingToken: null,
+        processingStartedAt: null,
+        processingHeartbeatAt: null,
       },
     });
     return { success: false };
@@ -337,33 +395,42 @@ async function processGuideInternal(
 
   // Step 1: Search
   let searchResults: SearchResult[];
-  try {
-    searchResults = await mockSearch(runId, guide.description);
-  } catch (error) {
-    if (attempt < 3) {
-      // Release lease and reset to pending before throwing so Temporal retry can reacquire
+  const canReuseSearch = attempt > 1 && hasNonEmptySearchResults(guide.searchResults);
+  if (canReuseSearch) {
+    searchResults = guide.searchResults as SearchResult[];
+  } else {
+    try {
+      searchResults = await mockSearch(runId, guide.description, refreshLease);
+    } catch (error) {
+      if (attempt < 3) {
+        // Release lease and reset to pending before throwing so Temporal retry can reacquire
+        await db.guide.updateMany({
+          where: { id: guideId, processingToken: token },
+          data: {
+            status: 'pending',
+            processingToken: null,
+            processingStartedAt: null,
+            processingHeartbeatAt: null,
+            searchResults: [],
+            failureDetails: { lastError: (error as Error).message, attempt },
+          },
+        });
+        throw error; // Let Temporal retry
+      }
+      // Only finalize if we still hold the lease
       await db.guide.updateMany({
         where: { id: guideId, processingToken: token },
         data: {
-          status: 'pending',
+          status: 'needs_attention',
+          failureReason: 'Search service unavailable after multiple attempts.',
+          failureDetails: { error: (error as Error).message, attempts: attempt },
           processingToken: null,
           processingStartedAt: null,
-          failureDetails: { lastError: (error as Error).message, attempt },
+          processingHeartbeatAt: null,
         },
       });
-      throw error; // Let Temporal retry
+      return { success: false };
     }
-    // Only finalize if we still hold the lease
-    await db.guide.updateMany({
-      where: { id: guideId, processingToken: token },
-      data: {
-        status: 'needs_attention',
-        failureReason: 'Search service unavailable after multiple attempts.',
-        failureDetails: { error: (error as Error).message, attempts: attempt },
-        processingToken: null,
-      },
-    });
-    return { success: false };
   }
 
   if (searchResults.length === 0) {
@@ -375,24 +442,29 @@ async function processGuideInternal(
         failureReason: "We couldn't find relevant content in your documents for this guide.",
         searchResults: [],
         processingToken: null,
+        processingStartedAt: null,
+        processingHeartbeatAt: null,
       },
     });
     return { success: false };
   }
 
-  // Transition to generating - keep the lease
+  // Transition to generating - keep the lease.
+  // If we reused cached search results, don't overwrite them.
   await db.guide.updateMany({
     where: { id: guideId, processingToken: token },
-    data: {
-      status: 'generating',
-      // Prisma JSON fields accept plain objects - spread to ensure serializable
-      searchResults: searchResults.map((r) => ({ ...r })),
-    },
+    data: canReuseSearch
+      ? { status: 'generating' }
+      : {
+          status: 'generating',
+          // Prisma JSON fields accept plain objects - spread to ensure serializable
+          searchResults: searchResults.map((r) => ({ ...r })),
+        },
   });
 
   // Step 2: Generate
   try {
-    await simulateLatency(GENERATION_CONFIG, 'Generating');
+    await simulateLatency(GENERATION_CONFIG, 'Generating', refreshLease);
 
     if (Math.random() < GENERATION_CONFIG.failureRate) {
       throw new Error('Generation service temporarily unavailable');
@@ -410,7 +482,13 @@ async function processGuideInternal(
     // Only finalize if we still hold the lease
     const finalizeResult = await db.guide.updateMany({
       where: { id: guideId, processingToken: token },
-      data: { status: 'completed', htmlContent: html, processingToken: null },
+      data: {
+        status: 'completed',
+        htmlContent: html,
+        processingToken: null,
+        processingStartedAt: null,
+        processingHeartbeatAt: null,
+      },
     });
 
     // If we didn't update, another worker took over - check if it succeeded
@@ -429,6 +507,7 @@ async function processGuideInternal(
           status: 'pending',
           processingToken: null,
           processingStartedAt: null,
+          processingHeartbeatAt: null,
           failureDetails: { lastError: (error as Error).message, attempt },
         },
       });
@@ -445,6 +524,8 @@ async function processGuideInternal(
         failureDetails: { error: (error as Error).message, attempts: attempt },
         htmlContent: generateSkeletonHTML(guide.name, guide.description),
         processingToken: null,
+        processingStartedAt: null,
+        processingHeartbeatAt: null,
       },
     });
 

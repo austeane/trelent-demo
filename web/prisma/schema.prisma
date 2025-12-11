@@ -73,6 +73,7 @@ model File {
   errorMessage        String?
   processingToken     String?    // Lease token: workflowId:activityId:attempt
   processingStartedAt DateTime?  // When processing began (for lease expiry)
+  processingHeartbeatAt DateTime? // Last lease refresh (for long-running activities)
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -96,6 +97,7 @@ model Guide {
   attempts            Int         @default(0)
   processingToken     String?     // Lease token: workflowId:activityId:attempt
   processingStartedAt DateTime?   // When processing began (for lease expiry)
+  processingHeartbeatAt DateTime? // Last lease refresh (for long-running activities)
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 

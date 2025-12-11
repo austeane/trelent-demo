@@ -9,6 +9,7 @@ const MOCK_CONFIG = {
 
 // Lease expiry threshold - allow takeover after this duration
 const LEASE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const LEASE_REFRESH_INTERVAL_MS = 30 * 1000; // Refresh lease roughly every 30s
 
 // Custom error for lease conflicts - always retryable regardless of attempt count
 class LeaseHeldError extends Error {
@@ -24,15 +25,20 @@ function generateProcessingToken(): string {
   return `${info.workflowExecution.workflowId}:${info.activityId}:${info.attempt}`;
 }
 
-async function simulateLatency(): Promise<void> {
+async function simulateLatency(refreshLease?: () => Promise<void>): Promise<void> {
   const duration =
     MOCK_CONFIG.minLatencyMs +
     Math.random() * (MOCK_CONFIG.maxLatencyMs - MOCK_CONFIG.minLatencyMs);
 
   const chunks = Math.ceil(duration / 1000);
+  let lastRefresh = Date.now();
   for (let i = 0; i < chunks; i++) {
     Context.current().heartbeat(`Converting ${i + 1}/${chunks}`);
     await new Promise((r) => setTimeout(r, 1000));
+    if (refreshLease && Date.now() - lastRefresh >= LEASE_REFRESH_INTERVAL_MS) {
+      await refreshLease();
+      lastRefresh = Date.now();
+    }
   }
 }
 
@@ -98,7 +104,10 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
         { status: 'pending' },
         {
           status: 'converting',
-          processingStartedAt: { lt: leaseExpiry },
+          OR: [
+            { processingHeartbeatAt: { lt: leaseExpiry } },
+            { processingHeartbeatAt: null, processingStartedAt: { lt: leaseExpiry } },
+          ],
         },
       ],
     },
@@ -106,6 +115,7 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
       status: 'converting',
       processingToken: token,
       processingStartedAt: now,
+      processingHeartbeatAt: now,
     },
   });
 
@@ -127,7 +137,17 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
     );
   }
 
-  await simulateLatency();
+  const refreshLease = async () => {
+    const refreshed = await db.file.updateMany({
+      where: { id: fileId, processingToken: token },
+      data: { processingHeartbeatAt: new Date() },
+    });
+    if (refreshed.count === 0) {
+      throw new LeaseHeldError(`File ${fileId} lease lost during processing`);
+    }
+  };
+
+  await simulateLatency(refreshLease);
 
   if (shouldFail()) {
     // Only finalize if we still hold the lease
@@ -137,6 +157,8 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
         status: 'failed',
         errorMessage: 'Document conversion failed: Unable to parse file format',
         processingToken: null,
+        processingStartedAt: null,
+        processingHeartbeatAt: null,
       },
     });
     return { success: false };
@@ -151,6 +173,8 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
       status: 'converted',
       markdownContent: markdown,
       processingToken: null,
+      processingStartedAt: null,
+      processingHeartbeatAt: null,
     },
   });
 
