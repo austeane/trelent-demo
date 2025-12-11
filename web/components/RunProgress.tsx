@@ -127,7 +127,7 @@ export function RunProgress({ runId }: { runId: string }) {
 
   const completed = guideCounts.completed || 0;
   const needsAttention = guideCounts.needs_attention || 0;
-  const inProgress = run.totalGuides - completed - needsAttention - (guideCounts.pending || 0);
+  const inProgress = (guideCounts.searching || 0) + (guideCounts.generating || 0);
 
   // Document conversion progress - include both converted AND failed as "processed"
   const filesConverted = fileCounts.converted || 0;
