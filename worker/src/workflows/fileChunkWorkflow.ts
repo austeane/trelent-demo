@@ -24,7 +24,7 @@ export interface FileChunkResult {
 export async function fileChunkWorkflow(
   runId: string,
   fileIds: string[],
-  chunkIndex: number
+  _chunkIndex: number
 ): Promise<FileChunkResult> {
   let successCount = 0;
   let failedCount = 0;

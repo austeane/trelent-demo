@@ -114,8 +114,12 @@ export async function convertFile(runId: string, fileId: string): Promise<{ succ
     const currentFile = await db.file.findUnique({ where: { id: fileId } });
 
     // If terminal state, return appropriate result
-    if (currentFile?.status === 'converted') return { success: true };
-    if (currentFile?.status === 'failed') return { success: false };
+    if (currentFile?.status === 'converted') {
+      return { success: true };
+    }
+    if (currentFile?.status === 'failed') {
+      return { success: false };
+    }
 
     // Still in progress - another worker has the lease. Throw LeaseHeldError to always retry.
     throw new LeaseHeldError(

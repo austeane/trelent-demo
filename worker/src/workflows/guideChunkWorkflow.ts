@@ -24,7 +24,7 @@ export interface GuideChunkResult {
 export async function guideChunkWorkflow(
   runId: string,
   guideIds: string[],
-  chunkIndex: number
+  _chunkIndex: number
 ): Promise<GuideChunkResult> {
   let successCount = 0;
   let failedCount = 0;

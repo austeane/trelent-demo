@@ -1,9 +1,9 @@
 'use client';
 
-import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { RunProgress } from '@/components/RunProgress';
+import { useParams } from 'next/navigation';
 import { GuideList } from '@/components/GuideList';
+import { RunProgress } from '@/components/RunProgress';
 
 export default function RunDetail() {
   const params = useParams();

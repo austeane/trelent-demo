@@ -1,6 +1,6 @@
+import { GuideStatus } from '@prisma/client';
 import { Context } from '@temporalio/activity';
 import { db } from '../lib/db';
-import { GuideStatus } from '@prisma/client';
 
 const SEARCH_CONFIG = {
   minLatencyMs: 800,
@@ -63,7 +63,7 @@ async function simulateLatency(
   }
 }
 
-async function mockSearch(runId: string, query: string): Promise<SearchResult[]> {
+async function mockSearch(runId: string, _query: string): Promise<SearchResult[]> {
   await simulateLatency(SEARCH_CONFIG, 'Searching');
 
   if (Math.random() < SEARCH_CONFIG.failureRate) {
@@ -295,8 +295,12 @@ async function processGuideInternal(
     const currentGuide = await db.guide.findUnique({ where: { id: guideId } });
 
     // If terminal state, return appropriate result
-    if (currentGuide?.status === 'completed') return { success: true };
-    if (currentGuide?.status === 'needs_attention') return { success: false };
+    if (currentGuide?.status === 'completed') {
+      return { success: true };
+    }
+    if (currentGuide?.status === 'needs_attention') {
+      return { success: false };
+    }
 
     // Still in progress - another worker has the lease. Throw LeaseHeldError to always retry.
     // This prevents "false failure" that causes incorrect run counters.

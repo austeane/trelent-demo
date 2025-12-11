@@ -7,7 +7,9 @@ let client: Client | null = null;
 let connectionPromise: Promise<Connection> | null = null;
 
 export async function getTemporalClient(): Promise<Client> {
-  if (client) return client;
+  if (client) {
+    return client;
+  }
 
   const address = process.env.TEMPORAL_ADDRESS || 'localhost:7233';
 

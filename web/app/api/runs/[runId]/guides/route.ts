@@ -1,6 +1,6 @@
+import { GuideStatus } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { GuideStatus } from '@prisma/client';
 
 // Valid GuideStatus values for validation
 const VALID_GUIDE_STATUSES = Object.values(GuideStatus);

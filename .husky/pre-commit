@@ -1,0 +1,8 @@
+# Lint-staged: runs eslint + prettier on staged files only
+npx lint-staged
+
+# TypeScript: full project type check (can't be incremental)
+npm run typecheck
+
+# Tests: run full test suite
+npm test

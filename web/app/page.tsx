@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 interface Run {
   id: string;
@@ -55,7 +55,9 @@ function ConfigureRunModal({
     failureRate: 0,
   });
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
   const presets = [
     { label: 'Quick Demo', fileCount: 8, guideCount: 12, failureRate: 0 },
@@ -248,8 +250,8 @@ export default function Dashboard() {
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse border rounded-lg p-4 bg-white">
-              <div className="h-5 bg-gray-200 rounded w-1/3 mb-2"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              <div className="h-5 bg-gray-200 rounded w-1/3 mb-2" />
+              <div className="h-4 bg-gray-200 rounded w-1/2" />
             </div>
           ))}
         </div>

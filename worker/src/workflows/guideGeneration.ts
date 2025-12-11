@@ -6,8 +6,8 @@ import {
   ParentClosePolicy,
 } from '@temporalio/workflow';
 import type * as activities from '../activities';
-import type { FileChunkResult } from './fileChunkWorkflow';
-import type { GuideChunkResult } from './guideChunkWorkflow';
+import type { FileChunkResult as _FileChunkResult } from './fileChunkWorkflow';
+import type { GuideChunkResult as _GuideChunkResult } from './guideChunkWorkflow';
 
 const acts = proxyActivities<typeof activities>({
   startToCloseTimeout: '5 minutes',
@@ -67,7 +67,7 @@ export async function guideGenerationWorkflow(
   fileIds: string[],
   guideIds: string[]
 ): Promise<void> {
-  let progress: Progress = {
+  const progress: Progress = {
     stage: 'initializing',
     totalFiles: fileIds.length,
     convertedFiles: 0,

@@ -1,5 +1,5 @@
-import { db } from '../lib/db';
 import { RunStatus, RunStage } from '@prisma/client';
+import { db } from '../lib/db';
 
 export async function updateRunStage(runId: string, stage: RunStage): Promise<void> {
   await db.run.update({

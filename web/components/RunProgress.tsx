@@ -41,13 +41,13 @@ interface RunData {
 function LoadingSkeleton() {
   return (
     <div className="animate-pulse space-y-4">
-      <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-      <div className="h-3 bg-gray-200 rounded-full w-full"></div>
+      <div className="h-8 bg-gray-200 rounded w-1/3" />
+      <div className="h-4 bg-gray-200 rounded w-1/2" />
+      <div className="h-3 bg-gray-200 rounded-full w-full" />
       <div className="grid grid-cols-3 gap-4">
-        <div className="h-16 bg-gray-200 rounded"></div>
-        <div className="h-16 bg-gray-200 rounded"></div>
-        <div className="h-16 bg-gray-200 rounded"></div>
+        <div className="h-16 bg-gray-200 rounded" />
+        <div className="h-16 bg-gray-200 rounded" />
+        <div className="h-16 bg-gray-200 rounded" />
       </div>
     </div>
   );
@@ -87,7 +87,9 @@ export function RunProgress({ runId }: { runId: string }) {
     const poll = async () => {
       try {
         const res = await fetch(`/api/runs/${runId}`);
-        if (!res.ok) throw new Error('Failed to fetch');
+        if (!res.ok) {
+          throw new Error('Failed to fetch');
+        }
         const json = await res.json();
         if (active) {
           setData(json);
@@ -97,8 +99,10 @@ export function RunProgress({ runId }: { runId: string }) {
         if (active && !['completed', 'completed_with_errors', 'failed'].includes(json.run.status)) {
           setTimeout(poll, 2000);
         }
-      } catch (err) {
-        if (active) setError('Failed to load run status');
+      } catch {
+        if (active) {
+          setError('Failed to load run status');
+        }
       }
     };
 
@@ -114,7 +118,9 @@ export function RunProgress({ runId }: { runId: string }) {
     );
   }
 
-  if (!data) return <LoadingSkeleton />;
+  if (!data) {
+    return <LoadingSkeleton />;
+  }
 
   const { run, guideCounts, fileCounts } = data;
   const stage = STAGE_LABELS[run.stage] || STAGE_LABELS.initializing;
@@ -141,7 +147,7 @@ export function RunProgress({ runId }: { runId: string }) {
       <div>
         <div className="flex items-center gap-2">
           <h2 className="text-xl font-semibold text-gray-900">{stage.label}</h2>
-          {!isFinished && <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>}
+          {!isFinished && <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />}
         </div>
         <p className="text-gray-500">{stage.description}</p>
       </div>

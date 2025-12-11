@@ -1,7 +1,7 @@
+import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTemporalClient, TASK_QUEUE } from '@/lib/temporal';
-import { Prisma } from '@prisma/client';
 
 // Force Node.js runtime (Temporal gRPC client doesn't work in Edge)
 export const runtime = 'nodejs';

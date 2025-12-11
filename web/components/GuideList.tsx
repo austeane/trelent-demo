@@ -58,8 +58,12 @@ export function GuideList({ runId }: { runId: string }) {
       setLoading(true);
       try {
         const params = new URLSearchParams({ page: String(page) });
-        if (filter) params.set('status', filter);
-        if (search) params.set('search', search);
+        if (filter) {
+          params.set('status', filter);
+        }
+        if (search) {
+          params.set('search', search);
+        }
 
         // Fetch guides and run status in parallel
         const [guidesRes, runRes] = await Promise.all([
@@ -79,7 +83,9 @@ export function GuideList({ runId }: { runId: string }) {
       } catch (err) {
         console.error('Failed to fetch guides:', err);
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
@@ -188,8 +194,8 @@ export function GuideList({ runId }: { runId: string }) {
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse border rounded-lg p-4">
-              <div className="h-5 bg-gray-200 rounded w-1/3 mb-2"></div>
-              <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+              <div className="h-5 bg-gray-200 rounded w-1/3 mb-2" />
+              <div className="h-4 bg-gray-200 rounded w-2/3" />
             </div>
           ))}
         </div>
